@@ -1,0 +1,40 @@
+{
+  "name": "tamo",
+  "homepage": "https://alexlafetra.github.io/spritemaker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
+  },
+  "dependencies": {
+    "@base-ui-components/react": "^1.0.0-beta.2",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/joy": "^5.0.0-beta.52",
+    "@mui/material": "^7.2.0",
+    "base-ui": "^0.0.294",
+    "jszip": "^3.10.1",
+    "p5": "^2.0.3",
+    "react": "^19.1.0",
+    "react-colorful": "^5.6.1",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.29.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.5.2",
+    "eslint": "^9.29.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "gh-pages": "^6.3.0",
+    "globals": "^16.2.0",
+    "vite": "^7.0.0"
+  }
+}
