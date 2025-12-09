@@ -288,7 +288,10 @@ function App() {
     const coords = getClickCoords(e);
     setCurrentMouseCoords(coords);
     //detect if the mouse button is held down (necessary for dragging)
-    if(e.buttons || (e.type === 'touchmove')){
+    if(e.buttons || (e.type === 'touchmove') ){
+      if(e.type === 'touchmove' && e.touches.length > 1){
+        return;
+      }
       const sprite = spritesRef.current[currentSpriteRef.current];
       switch(settingsRef.current.currentTool){
         case 'pixel':
@@ -963,8 +966,6 @@ function App() {
 
   const canvasContainerStyle = {
     display:'block',
-    position:'relative',
-    gridArea:'canvas',
     pointerEvents:'none',
     marginLeft:((sprites[currentSprite].width)*settings.canvasScale)*0.2+'px',
     marginRight:((sprites[currentSprite].width)*settings.canvasScale)*0.2+'px',
@@ -979,22 +980,24 @@ function App() {
       <div className = "app_container">
         {/* title image, gifs */}
         <div id = "title_container">
-          <img id = "title_image" className = "transparent_img_drop_shadow" style = {{width:'200px'}} src = 'flipbook/title.gif'/>
-          <img id = "gif_1" className = "title_gif " src = 'flipbook/tamo_idle.gif' style = {{left:'45px',top:'20px'}} ></img>
-          <img id = "gif_2" className = "title_gif " src = 'flipbook/porcini_happy.gif' style = {{left:'255px',top:'20px'}} ></img>
-          <img id = "gif_3" className = "title_gif " src = 'flipbook/bug_angry.gif' style = {{left:'15px',bottom:'0px'}} ></img>
-          <img id = "gif_4" className = "title_gif " src = 'flipbook/boto_sad.gif' style = {{left:'295px',bottom:'0'}} ></img>
+          <img id = "title_image" className = "transparent_img_drop_shadow" style = {{width:'200px'}} src = 'title.gif'/>
+          <img id = "gif_1" className = "title_gif " src = 'tamo_idle.gif' style = {{left:'-45px',top:'-40px'}} ></img>
+          <img id = "gif_2" className = "title_gif " src = 'porcini_happy.gif' style = {{left:'185px',top:'-40px'}} ></img>
+          <img id = "gif_3" className = "title_gif " src = 'bug_angry.gif' style = {{left:'-60px',top:'40px'}} ></img>
+          <img id = "gif_4" className = "title_gif " src = 'boto_sad.gif' style = {{left:'200px',top:'40px'}} ></img>
         </div>
         {/* grid overlay, border image, and main canvas */}
-        <div id = "canvas_container" style = {canvasContainerStyle}>
-          <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave = {handleMouseLeave} onTouchMove={handleMouseMove}></canvas>
-          {settings.overlayGrid && gridDivs}
-          {(sprites[currentSprite].width <= 32) && (sprites[currentSprite].height <= 32) &&
-          <img id = "canvas_border" className = "transparent_img_drop_shadow" src = 'flipbook/border_transparent.png' style = {canvasBorderImageStyle}></img>
-          }
-          {(selectionBox.active || selectionBox.hasStarted) &&
-            <div id = "selection_box" style = {selectionBoxStyle}></div>
-          }
+        <div id = "canvas_container_container">
+          <div id = "canvas_container" style = {canvasContainerStyle}>
+            <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave = {handleMouseLeave} onTouchMove={handleMouseMove}></canvas>
+            {settings.overlayGrid && gridDivs}
+            {(sprites[currentSprite].width <= 32) && (sprites[currentSprite].height <= 32) &&
+            <img id = "canvas_border" className = "transparent_img_drop_shadow" src = 'border_transparent.png' style = {canvasBorderImageStyle}></img>
+            }
+            {(selectionBox.active || selectionBox.hasStarted) &&
+              <div id = "selection_box" style = {selectionBoxStyle}></div>
+            }
+          </div>
         </div>
 
         {/* spritesheet tabs */}

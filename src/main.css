@@ -18,17 +18,19 @@
     height:100%;
     position:relative;
     display:grid;
-    grid-template-rows: max-content max-content auto;
+    grid-template-rows: 200px max-content auto;
     grid-template-columns: max-content fit-content(500px) 250px;
-    grid-template-areas: "title title none"
+    grid-template-areas: "title null none"
                          "spritesheet_tabs null none"
                          "ui canvas downloadlinks";
 }
 
 #title_container{
-    padding-top:80px;
-    padding-left:75px;
+    width:fit-content;
+    margin:auto;
     position:relative;
+    /* padding-top:80px;
+    padding-left:75px; */
     grid-area:title;
     image-rendering: pixelated;
 }
@@ -89,7 +91,7 @@
     grid-area: spritesheet_tabs;
     display:flex;
     height:fit-content;
-    max-width:400px;
+    max-width:260px;
     /* width: */
     flex-wrap: wrap;
     padding-top:4px;
@@ -227,15 +229,22 @@
     /* color: purple; Or any other desired color value */
 }
 
+#canvas_container_container{
+    position:relative;
+    grid-area:canvas;
+    width:fit-content;
+    margin:60px auto;
+}
+
 @media all and (max-width: 500px) {
     .app_container{
         overflow-y: scroll;
-        width:fit-content;
+        width:100%;
         margin:auto;
         height:100%;
         position:relative;
         display:grid;
-        grid-template-rows: max-content max-content max-content max-content;
+        grid-template-rows: 200px max-content max-content max-content;
         grid-template-columns: 100%;
         grid-template-areas: "title"
                             "canvas"
@@ -246,18 +255,13 @@
     .ui_container{
         padding-left: 0;
         margin:auto;
-        max-width: 350px;
     }
     .spritesheet_tabs_container{
         padding-left: 0;
-        max-width: 350px;
         width:fit-content;
         margin:auto;
     }
-    .canvas_container{
-        margin:auto;
-    }
     #main_canvas{
-        touch-action: none;
+        touch-action: pinch-zoom;
     }
 }
