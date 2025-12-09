@@ -1,160 +1,89 @@
-import { useState , useEffect , useRef} from 'react'
-import React from 'react'
+import { useState , useEffect , useRef, useLayoutEffect} from 'react'
 import './main.css';
 import JSZip from 'jszip'
+import { v4 as uuid } from "uuid";
+import { Sprite } from './Sprite';
+import { PixelFrame } from './PixelFrame';
 
+// helpful chatGPT react tip:
+/*
+Important rule:
+
+🟥 DO NOT mutate the structure of sprites, frames[], or spritesheet objects in-place.
+
+🟩 DO mutate the PixelFrame.data buffer in-place.
+*/
+//Basically, you're only using react rerenders to redraw
+//the UI. NOT the pixel data, which you redraw manually!
 
 function App() {
-
-  const PixelFrame = (w,h,fill) => {
-    const data = [];
-    for(let i = 0; i<w*h; i++){
-      if(fill.length && fill.length > i)
-        data[i] = fill[i];
-      else
-        data[i] = fill;
-    }
-    return{
-      width : w,
-      height: h,
-      data : data,
-      getPixel : function(x,y){
-        if(x>=this.width || x<0 || y>=this.height || y<0)
-          return undefined;
-        return this.data[x+this.width*y];
-      },
-      setPixel : function(x,y,val){
-        if(x>=this.width || x<0 || y>=this.height || y<0)
-          return;
-        this.data[x+this.width*y] = val;
-      },
-      drawLine : function(x0,y0,x1,y1,val){
-        const steep = Math.abs(y1 - y0) > Math.abs(x1 - x0);
-        if (steep) {
-          [x0, y0] = [y0,x0];
-          [x1, y1] = [y1,x1];
-        }
-
-        if (x0 > x1) {
-          [x0, x1] = [x1,x0];
-          [y0, y1] = [y1,y0];
-        }
-
-        let dx, dy;
-        dx = x1 - x0;
-        dy = Math.abs(y1 - y0);
-
-        let err = Math.trunc(dx / 2);
-        let ystep;
-
-        if (y0 < y1) {
-          ystep = 1;
-        } else {
-          ystep = -1;
-        }
-        let y = y0;
-        for (let x = x0; x <= x1; x++) {
-          if (steep) {
-            this.setPixel(y,x,val);
-          } else {
-            this.setPixel(x,y,val);
-          }
-          err -= dy;
-          if (err < 0) {
-            y += ystep;
-            err += dx;
-          }
-        }
-      },
-      // https://codeheir.com/blog/2022/08/21/comparing-flood-fill-algorithms-in-javascript/
-      fill : function(x,y,fillColor){
-
-        //seed-checking fn that checks bounds and color to see if a pixel should be a new seed
-        const isValid = (xi,yi,color) => {
-          return ((xi >= 0) && (xi < this.width) && (yi >= 0) && (yi < this.height) && (this.getPixel(xi,yi) === color));
-        }
-
-        const scan = (lx, rx, y, stack, colorToBeFilled) => {
-            for (let i = lx; i <= rx; i++) {
-              if (isValid(i, y, colorToBeFilled)) {
-                stack.push({x: i, y: y, color: colorToBeFilled});
-              }
-            }
-            return stack;
-        }
-
-        const colorToBeFilled = this.getPixel(x,y);
-
-        if(!isValid(x,y,this.getPixel(x,y))){
-          return;
-        }
-
-        if (colorToBeFilled === fillColor) return;
-
-        let stack = [{x:x,y:y,color:colorToBeFilled}];
-
-        while (stack.length > 0) {
-            let seed = stack.pop();
-
-            //left fill
-            let lx = seed.x;
-            while (isValid(lx, seed.y, seed.color)) {
-              this.setPixel(lx,seed.y,fillColor);
-              lx = lx -1;
-            }
-
-            //right fill
-            let rx = seed.x + 1;
-            while (isValid(rx, seed.y, seed.color)) {
-              this.setPixel(rx,seed.y,fillColor);
-              rx = rx + 1;
-            }
-
-            //scan up/down
-            stack = scan(lx+1, rx-1, seed.y + 1, stack, seed.color);
-            stack = scan(lx+1, rx-1, seed.y - 1, stack, seed.color)
-        }
-        return;
-    },
-    invert : function(){
-      for(let i = 0; i<this.data.length; i++){
-        this.data[i] = (this.data[i] == 1) ? 0 : 1;
-      }
-      return this;
-    }
-    }
-  }
   const zip = useRef(new JSZip());
   const startClickCoords = useRef({x:0,y:0});
   const pixelSaveState = useRef(undefined);
   const [currentMouseCoords,setCurrentMouseCoords] = useState({x:0,y:0});
-  const [sprite,setSprite] = useState(
-    {
-      frames : [PixelFrame(16,16,0)],
-      width:16,
-      height:16,
-      currentFrame:0,
-      fileName : 'new_sprite_'
+
+  //update the highlight on the divs whenever the mouse coords are updated
+  useEffect(()=>{
+    const divs = document.getElementsByClassName("grid_div");
+    for(let div of divs){
+      div.style.backgroundColor = 'transparent';
     }
-  );
-  const [spritesheet,setSpritesheet] = useState({sprites:[sprite],currentSprite:0});
+    if(currentMouseCoords === null)
+      return;
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const index = currentMouseCoords.y * sprite.width + currentMouseCoords.x;
+    const targetDiv = document.getElementById("grid_div_"+index);
+    if(targetDiv)
+      targetDiv.style.backgroundColor = '#04ff008f';
+  },[currentMouseCoords]);
+
+  const [spritesheet,setSpritesheet] = useState({
+    sprites:[Sprite()],
+    currentSprite:0,
+    getSprite:function(){
+      return this.sprites[this.currentSprite];
+    }
+  });
+  const [currentSprite,setCurrentSprite] = useState(0);
+  const [sprites,setSprites] = useState([Sprite()]);
+  
   const spritesheetRef = useRef(spritesheet);
   useEffect(() => {
     spritesheetRef.current = spritesheet;
+    // setSpritesheetTabs(createSpritesheetTabs(spritesheet));
+    renderCurrentFrameToMainCanvas();
   },[spritesheet]);
-  useEffect(()=>{
-    console.log(spritesheet.currentSprite);
-    setSprite(spritesheet.sprites[spritesheet.currentSprite]);
-  },[spritesheet.currentSprite]);
 
   const [userInputDimensions,setUserInputDimensions] = useState({
-    width:sprite.width,
-    height:sprite.height
+    width:spritesheet.sprites[spritesheet.currentSprite].width,
+    height:spritesheet.sprites[spritesheet.currentSprite].height
   });
   const userInputDimensionsRef = useRef(userInputDimensions);
   useEffect(() => {
     userInputDimensionsRef.current = userInputDimensions;
   },[userInputDimensions]);
+
+  const [settings,setSettings] = useState({
+    overlayGhosting: true,
+    overlayGrid: true,
+    frameSpeed : 1000,//speed in ms
+    currentTool: 'pixel',
+    currentColor:1,//1 for white, 0 for black
+    canvasScale:16,
+    playing:false,
+    lineStarted:false
+  })
+  const settingsRef = useRef(settings);
+  const backupSettingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+    renderCurrentFrameToMainCanvas();
+  }, [settings]);
+
+  const mainCanvasRef = useRef(null);
+  //use this to clear the playNextFrame() timeout
+  const timeoutIDRef = useRef(null);
+
 
   useEffect(() => {
     //add keyboard input event listener
@@ -195,32 +124,8 @@ function App() {
     dropZone.addEventListener("drop", dropHandler);
   },[]);
 
-  const spriteRef = useRef(sprite);
-  const [settings,setSettings] = useState({
-    overlayGhosting: true,
-    overlayGrid: true,
-    frameSpeed : 1000,//speed in ms
-    currentTool: 'pixel',
-    currentColor:1,//1 for white, 0 for black
-    canvasScale:16,
-    playing:false,
-    lineStarted:false
-  })
-  const settingsRef = useRef(settings);
-  const backupSettingsRef = useRef(settings);
-
-  // Re-render the main canvas whenever the current frame changes
-  useEffect(() => {
-    spriteRef.current = sprite;
-    settingsRef.current = settings;
-    renderCurrentFrameToMainCanvas();
-  }, [sprite,settings]);
-
-  const mainCanvasRef = useRef(null);
-  //use this to clear the playNextFrame() timeout
-  const timeoutIDRef = useRef(null);
-
   function getClickCoords(e){
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
     const dims = e.target.getBoundingClientRect();
     const clickCoords = {
       x:e.pageX - dims.left,
@@ -228,8 +133,8 @@ function App() {
     };
     //px per char
     const pixelDims = {
-      width : dims.width / spriteRef.current.width,
-      height : dims.height / spriteRef.current.height,
+      width : dims.width / sprite.width,
+      height : dims.height / sprite.height,
     };
     return {x: Math.trunc(clickCoords.x/pixelDims.width),y:Math.trunc(clickCoords.y/pixelDims.height)};
   }
@@ -246,22 +151,22 @@ function App() {
   function handleMouseDown(e){
     const coords = getClickCoords(e);
     startClickCoords.current = coords;
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
     switch(settingsRef.current.currentTool){
       case 'pixel':
-        const newFrames = spriteRef.current.frames;
-        newFrames[spriteRef.current.currentFrame].setPixel(coords.x,coords.y,settingsRef.current.currentColor);
-        setSprite({...spriteRef.current,frames:newFrames});
+        const newFrames = sprite.frames;
+        newFrames[sprite.currentFrame].setPixel(coords.x,coords.y,settingsRef.current.currentColor);
+        renderCurrentFrameToMainCanvas();
         break;
       case 'fill':{
-        const newFrames = spriteRef.current.frames;
-        newFrames[spriteRef.current.currentFrame].fill(coords.x,coords.y,settingsRef.current.currentColor);
-        setSprite({...spriteRef.current,frames:newFrames});
+        const newFrames = sprite.frames;
+        newFrames[sprite.currentFrame].fill(coords.x,coords.y,settingsRef.current.currentColor);
+        renderCurrentFrameToMainCanvas();
       }
         break;
       case 'line':
         //make a backup of the line
-        // pixelSaveState.current = spriteRef.current.frames[spriteRef.current.currentFrame];
-        pixelSaveState.current = PixelFrame(spriteRef.current.width,spriteRef.current.height,spriteRef.current.frames[spriteRef.current.currentFrame].data);
+        pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
         setSettings({
           ...settingsRef.current,
           lineStarted : true
@@ -269,34 +174,31 @@ function App() {
         break;
     }
   }
-
+  function handleMouseLeave(e){
+    setCurrentMouseCoords(null);
+  }
   function handleMouseMove(e){
     const coords = getClickCoords(e);
     setCurrentMouseCoords(coords);
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
     //detect if the mouse button is held down (necessary for dragging)
     if(e.buttons){
       switch(settingsRef.current.currentTool){
         case 'pixel':
-          const newFrames = spriteRef.current.frames;
-          newFrames[spriteRef.current.currentFrame].setPixel(coords.x,coords.y,settingsRef.current.currentColor);
-          setSprite({...spriteRef.current,frames:newFrames});
+          sprite.frames[sprite.currentFrame].setPixel(coords.x,coords.y,settingsRef.current.currentColor);
+          renderCurrentFrameToMainCanvas();
           break;
         case 'line':
           //if you've already started a line, draw it
           if(settingsRef.current.lineStarted){
-            const newFrames = spriteRef.current.frames;
-            newFrames[spriteRef.current.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,pixelSaveState.current.data);
-            newFrames[spriteRef.current.currentFrame].drawLine(startClickCoords.current.x,startClickCoords.current.y,coords.x,coords.y,settingsRef.current.currentColor);
-            setSprite({
-              ...spriteRef.current,
-              frames:newFrames
-            });
+            sprite.frames[sprite.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,pixelSaveState.current.data);
+            sprite.frames[sprite.currentFrame].drawLine(startClickCoords.current.x,startClickCoords.current.y,coords.x,coords.y,settingsRef.current.currentColor);
+            renderCurrentFrameToMainCanvas();
           }
           break;
         case 'fill':{
-          const newFrames = spriteRef.current.frames;
-          newFrames[spriteRef.current.currentFrame].fill(coords.x,coords.y,settingsRef.current.currentColor);
-          setSprite({...spriteRef.current,frames:newFrames});
+          sprite.frames[sprite.currentFrame].fill(coords.x,coords.y,settingsRef.current.currentColor);
+          renderCurrentFrameToMainCanvas();
         }
           break;
         case 'move':
@@ -314,21 +216,17 @@ function App() {
   }
 
   function shiftPixels(heading){
-    const newFrame = PixelFrame(spriteRef.current.width, spriteRef.current.height, 0);
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const newFrame = PixelFrame(sprite.width, sprite.height, 0);
     
     //copy over data, but shifted
-    for(let x = 0; x<spriteRef.current.frames[spriteRef.current.currentFrame].width; x++){
-      for(let y = 0; y<spriteRef.current.frames[spriteRef.current.currentFrame].height; y++){
-          newFrame.setPixel(x+heading.x,y+heading.y,spriteRef.current.frames[spriteRef.current.currentFrame].getPixel(x,y));
+    for(let x = 0; x<sprite.frames[sprite.currentFrame].width; x++){
+      for(let y = 0; y<sprite.frames[sprite.currentFrame].height; y++){
+        newFrame.setPixel(x+heading.x,y+heading.y,sprite.frames[sprite.currentFrame].getPixel(x,y));
       }
     }
-
-    const newFrames = [...spriteRef.current.frames];
-    newFrames[spriteRef.current.currentFrame] = newFrame;
-    setSprite({
-      ...spriteRef.current,
-      frames : newFrames,
-    });
+    sprite.frames[sprite.currentFrame] = newFrame;
+    renderCurrentFrameToMainCanvas();
   }
 
   function renderCurrentFrameToMainCanvas(){
@@ -336,30 +234,30 @@ function App() {
     if(!canvas)
       return;
 
-    const currentSprite = spriteRef.current;
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
 
     //figure out the last frame, to draw ghosting
     let previousFrame = undefined;
-    if(spriteRef.current.currentFrame > 0)
-      previousFrame = spriteRef.current.currentFrame - 1;
-    else if(currentSprite.frames.length > 1)
-      previousFrame = currentSprite.frames.length-1;
+    if(sprite.currentFrame > 0)
+      previousFrame = sprite.currentFrame - 1;
+    else if(sprite.frames.length > 1)
+      previousFrame = sprite.frames.length-1;
 
     //set canvas dims (these aren't the visual size of the canvas)
-    canvas.width = spriteRef.current.width;
-    canvas.height = spriteRef.current.height;
+    canvas.width = sprite.width;
+    canvas.height = sprite.height;
 
     //get drawing context
     const context = canvas.getContext("2d");
     //draw over each pixel
-    for(let x = 0; x<currentSprite.width; x++){
-      for(let y = 0; y<currentSprite.height; y++){
+    for(let x = 0; x<sprite.width; x++){
+      for(let y = 0; y<sprite.height; y++){
         let bgColor = "#000000";
         //if there's a previous frame, ghost it
         if(previousFrame !== undefined  && settingsRef.current.overlayGhosting){
-          bgColor = currentSprite.frames[previousFrame].getPixel(x,y)?"#555555ff":bgColor;
+          bgColor = sprite.frames[previousFrame].getPixel(x,y)?"#555555ff":bgColor;
         }
-        context.fillStyle = currentSprite.frames[spriteRef.current.currentFrame].getPixel(x,y)?"#FFFFFF":bgColor;
+        context.fillStyle = sprite.frames[sprite.currentFrame].getPixel(x,y)?"#FFFFFF":bgColor;
         context.fillRect(x,y,1,1);
       }
     }
@@ -378,72 +276,103 @@ function App() {
   }
 
   function playNextFrame(){
-    setSprite({...spriteRef.current,currentFrame:((spriteRef.current.currentFrame + 1) % spriteRef.current.frames.length)});
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    sprite.nextFrame();
+    setSpritesheet(prev => ({
+      ...prev,
+      sprites:[...prev.sprites]
+    }));
     timeoutIDRef.current = window.setTimeout(playNextFrame,settingsRef.current.frameSpeed);
   }
 
   function clearFrame(){
-    const newFrame = PixelFrame(spriteRef.current.width, spriteRef.current.height, 0);
-    const newFrames = [...spriteRef.current.frames];
-    newFrames[spriteRef.current.currentFrame] = newFrame;
-    setSprite({
-      ...spriteRef.current,
-      frames : newFrames,
-    });
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    sprite.frames[sprite.currentFrame] = PixelFrame(sprite.width, sprite.height, 0);
+    setSpritesheet(prev => ({
+      ...prev,
+      sprites:[...prev.sprites]
+    }));
+  }
+
+  function invertFrame(){
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    sprite.frames[sprite.currentFrame].invert();
+    setSpritesheet(prev => ({
+      ...prev,
+      sprites:[...prev.sprites]
+    }));
   }
 
   function addNewFrame(){
-    const newFrame = PixelFrame(spriteRef.current.width, spriteRef.current.height, 0);
-    const newFrames = [...spriteRef.current.frames];
-    newFrames.push(newFrame);
-    setSprite({
-      ...spriteRef.current,
-      frames : newFrames,
-      currentFrame:newFrames.length-1
-    });
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    sprite.frames = [...sprite.frames,PixelFrame(sprite.width, sprite.height, 0)];
+    sprite.currentFrame = sprite.frames.length-1;
+    //trigger rerender to remake previews
+    setSpritesheet(prev => ({
+      ...prev,
+      sprites:[...prev.sprites]
+    }));
   }
 
   function duplicateFrame(frame){
-    const targetFrame = PixelFrame(spriteRef.current.width, spriteRef.current.height, 0);
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const newFrame = PixelFrame(sprite.width, sprite.height, 0);
     
     //copy over all the data (can't copy object ref)
-    for(let i = 0; i<targetFrame.data.length; i++){
-      targetFrame.data[i] = spriteRef.current.frames[frame].data[i];
+    for(let i = 0; i<newFrame.data.length; i++){
+      newFrame.data[i] = sprite.frames[frame].data[i];
     }
-    const newFrames = [...spriteRef.current.frames];
-    newFrames.splice(frame,0,targetFrame);
-    setSprite({
-      ...spriteRef.current,
-      frames : newFrames,
-    });
+    const newFrames = [...sprite.frames];
+    newFrames.splice(frame,0,newFrame);
+    sprite.currentFrame = newFrames.length-1;
+    sprite.frames = newFrames;
+    //trigger rerender to recreate previews
+    setSpritesheet(prev => ({
+      ...prev,
+      sprites : [...prev.sprites]
+    }));
   }
 
   function deleteFrame(){
-    if(spriteRef.current.frames.length>1){
-      const newFrames = spriteRef.current.frames.toSpliced(spriteRef.current.currentFrame,1);
-      setSprite({
-        ...spriteRef.current,
-        frames : newFrames,
-        currentFrame:(spriteRef.current.currentFrame > (newFrames.length - 1))?(newFrames.length-1):spriteRef.current.currentFrame
-      });
-    }
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    if(sprite.frames.length>1){
+      const newFrames = sprite.frames.toSpliced(sprite.currentFrame,1);
+      sprite.frames = newFrames;
+      sprite.currentFrame = Math.min(sprite.currentFrame,sprite.frames.length-1);
+      //trigger rerender to recreate previews
+      setSpritesheet(prev => ({
+        ...prev,
+        sprites : [...prev.sprites]
+      }));
+      }
   }
 
   function reverseFrames(){
-    setSprite({
-      ...spriteRef.current,
-      frames:spriteRef.current.frames.reverse()
-    });
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    sprite.frames.reverse();
+    setSpritesheet(prev => ({
+      ...prev,
+      sprites : [...prev.sprites]
+    }));
   }
 
   function handleKeyDown(e){
     if((e.target === document.body)){
+      const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
       switch(e.key){
         case 'ArrowLeft':
-          setSprite({...spriteRef.current,currentFrame:spriteRef.current.currentFrame?((spriteRef.current.currentFrame - 1) % spriteRef.current.frames.length):(spriteRef.current.frames.length-1)});
+          sprite.nextFrame();
+          setSpritesheet(prev => ({
+            ...prev,
+            sprites : [...prev.sprites]
+          }));
           break;
         case 'ArrowRight':
-          setSprite({...spriteRef.current,currentFrame:((spriteRef.current.currentFrame + 1) % spriteRef.current.frames.length)});
+          sprite.previousFrame();
+          setSpritesheet(prev => ({
+            ...prev,
+            sprites : [...prev.sprites]
+          }));
           break;
         case ' ':
           settingsRef.current.playing?stop():play();
@@ -465,25 +394,27 @@ function App() {
   }
 
   function downloadAllFramesAsBMPs(){
-    for(let frame = 0; frame<spriteRef.current.frames.length; frame++){
-      renderFrame(mainCanvasRef.current.getContext('2d'),spriteRef.current,frame,{x:0,y:0});
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    for(let frame = 0; frame<sprite.frames.length; frame++){
+      renderFrame(mainCanvasRef.current.getContext('2d'),sprite,frame,{x:0,y:0});
       mainCanvasRef.current.toBlob((blob) => {
-        const filename = spriteRef.current.fileName+(frame+1)+'.bmp';
+        const filename = sprite.fileName+'_'+(frame+1)+'.bmp';
         zip.current.file(filename,blob);
-        if(frame === spriteRef.current.frames.length-1)
+        if(frame === sprite.frames.length-1)
           downloadZip();
       });
     }
   }
 
   function downloadSingleFrameAsBMP(frame){
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = spriteRef.current.width;
-    tempCanvas.height = spriteRef.current.height;
-    renderFrame(tempCanvas.getContext('2d'),spriteRef.current,frame,{x:0,y:0});
+    tempCanvas.width = sprite.width;
+    tempCanvas.height = sprite.height;
+    renderFrame(tempCanvas.getContext('2d'),sprite,frame,{x:0,y:0});
     tempCanvas.toBlob((blob) => {
       const a = document.createElement('a');
-      const filename = spriteRef.current.fileName+(frame+1)+'.bmp';
+      const filename = sprite.fileName+'_'+(frame+1)+'.bmp';
       a.href = URL.createObjectURL(blob);
       a.download = filename;
       a.click();
@@ -503,8 +434,9 @@ function App() {
   // outputs a link for each frame
   function FrameDownloadLinks(){
     const children = [];
+    const sprite = spritesheet.sprites[spritesheet.currentSprite];
     for(let frame = 0; frame<sprite.frames.length; frame++){
-      children.push(<p key = {frame} style = {{color:'blue',textDecoration:'underline',cursor:'pointer'}} onClick = {(e) => downloadSingleFrameAsBMP(frame)}>{sprite.fileName+(frame+1)+'.bmp'}</p>);
+      children.push(<p key = {frame} style = {{color:'blue',textDecoration:'underline',cursor:'pointer'}} onClick = {(e) => downloadSingleFrameAsBMP(frame)}>{sprite.fileName+'_'+(frame+1)+'.bmp'}</p>);
     }
     return(
       <div style = {{display:'flex',flexDirection:'column'}}>
@@ -517,42 +449,39 @@ function App() {
 
   }
 
-  function GridDivs(){
+  function createGridDivs(width,height,scale){
     const children = [];
     const parentStyle = {
-      width:sprite.width*settingsRef.current.canvasScale + 'px',
-      height:sprite.height*settingsRef.current.canvasScale + 'px',
+      width:width*scale + 'px',
+      height:height*scale + 'px',
       display:'grid',
       position:'fixed',
-      gridTemplateColumns:'repeat('+sprite.width+',1fr)',
-      gridTemplateRows:'repeat('+sprite.height+',1fr)'
+      gridTemplateColumns:'repeat('+width+',1fr)',
+      gridTemplateRows:'repeat('+height+',1fr)'
     }
     const borderStyle = '1px dashed #535889ff';
-    for(let i = 0; i<sprite.width*sprite.height; i++){
+    for(let i = 0; i<width*height; i++){
       const childStyle = {
-        width:((settingsRef.current.canvasScale-1) - 1/sprite.width)+'px',
-        height:((settingsRef.current.canvasScale-1) - 1/sprite.height)+'px',
+        width:((scale-1) - 1/width)+'px',
+        height:((scale-1) - 1/height)+'px',
         border:'1px dashed transparent',
         borderLeft:'none',
         borderTop:'none'
       };
       childStyle.border = borderStyle;
-      if((i%sprite.width) == 0){
+      if((i%width) == 0){
         childStyle.borderLeft = borderStyle;
       }
-      if(i<sprite.width){
+      if(i<width){
         childStyle.borderTop = borderStyle;
       }
-      children.push(<div key = {i} className = "grid_div" style = {childStyle}></div>);
+      children.push(<div key = {i} id = {"grid_div_"+i} className = "grid_div" style = {childStyle}></div>);
     }
     return(<div style = {parentStyle}>{children}</div>);
   }
 
-  const gridDivs = useRef(GridDivs());
-  useEffect(() => {
-    gridDivs.current = GridDivs();
-  },[settingsRef.current.canvasScale,sprite.width,sprite.height]);
-
+  const [gridDivs,setGridDivs] = useState(()=>createGridDivs(16,16,settings.canvasScale));
+  // const [spritesheetTabs,setSpritesheetTabs] = useState(()=>createSpritesheetTabs(spritesheet));
   function play(){
     //copy the current settings
     backupSettingsRef.current = {
@@ -596,7 +525,7 @@ function App() {
         img.onload = function(){
           const ctx = mainCanvasRef.current.getContext('2d');
           ctx.drawImage(img, 0, 0);
-          setFrameFromCanvas(mainCanvasRef.current,spriteRef.current.currentFrame);
+          setFrameFromCanvas(mainCanvasRef.current,spritesheetRef.current.sprites[spritesheetRef.current.currentSprite].currentFrame);
         }
         img.src = reader.result;
       }
@@ -623,17 +552,17 @@ function App() {
   }
 
   function setFrameFromCanvas(canvas,frame){
+    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
     const pixelData = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);
-    const newPixelFrame = PixelFrame(spriteRef.current.width,spriteRef.current.height,0);
+    const newPixelFrame = PixelFrame(sprite.width,sprite.height,0);
     for(let px = 0; px<pixelData.data.length/4; px++){
       newPixelFrame.setPixel(px%canvas.width,Math.trunc(px/canvas.height),pixelData.data[px*4]?1:0);
     }
-    const newFrames = spriteRef.current.frames;
-    newFrames[frame] = newPixelFrame;
-    setSprite({
-      ...spriteRef.current,
-      frames: newFrames
-    });
+    sprite.frames[frame] = newPixelFrame;
+    setSpritesheet(prev => ({
+      ...prev,
+      sprites:[...prev.sprites]
+    }));
   }
   function canvasCursor(){
     switch(settings.currentTool){
@@ -647,11 +576,12 @@ function App() {
 
 
   function getTotalImageDataSize(){
+    const sprite = spritesheet.sprites[spritesheet.currentSprite];
     return Math.ceil(sprite.width*sprite.height/8) * sprite.frames.length;
   }
   function resizeCanvasToNewDimensions(){
-    const newFrames = [];
-    for(let frame of spriteRef.current.frames){
+    const sprite = spritesheet.sprites[spritesheet.currentSprite];
+    for(let frame of sprite.frames){
       const targetFrame = PixelFrame(userInputDimensionsRef.current.width, userInputDimensionsRef.current.height, 0);
       //copy over all the data (can't copy object ref)
       for(let x = 0; x<targetFrame.width; x++){
@@ -659,114 +589,138 @@ function App() {
           targetFrame.setPixel(x,y,frame.getPixel(x,y));
         }
       }
-      newFrames.push(targetFrame);
+      frame = targetFrame;
     }
-    setSprite({
-      ...spriteRef.current,
-      width:userInputDimensionsRef.current.width,
-      height:userInputDimensionsRef.current.height,
-      frames:newFrames
-    });
+    sprite.width = userInputDimensionsRef.current.width;
+    sprite.height = userInputDimensionsRef.current.height;
+    setSpritesheet(prev => ({
+      ...prev,
+      sprites:[...prev.sprites]
+    }));
+    setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
   }
+
   function addNewSprite(){
-    const newSprite = {
-      frames : [PixelFrame(16,16,0)],
-      width:16,
-      height:16,
-      currentFrame:0,
-      fileName : 'new_sprite_'
-    };
-    const newSprites = [...spritesheetRef.current.sprites, newSprite];
-    setSpritesheet({
-      sprites:newSprites,
-      currentSprite:newSprites.length-1
-    });
+    const newSprite = Sprite();
+    setSpritesheet(prev => ({
+      ...prev,
+      sprites:[...prev.sprites,newSprite],
+      currentSprite: prev.sprites.length
+    }));
   }
 
   function deleteSprite(index){
-    if(spritesheetRef.current.sprites.length<=1)
-      return;
-    const newSpritesheet = [...spritesheetRef.current.sprites];
-    newSpritesheet.splice(index,1);
-    setSpritesheet({
-      currentSprite:Math.min(spritesheetRef.current.currentSprite,newSpritesheet),    
-      sprites:newSpritesheet
+    setSpritesheet(prev => {
+      if (prev.sprites.length <= 1)
+        return prev;
+
+      //remove target sprite
+      const newSprites = prev.sprites.filter((_,i) => i != index);
+      //new current sprite
+      const newCurrent = Math.min(prev.currentSprite, newSprites.length - 1);
+      const updated = {
+        ...prev,
+        sprites: newSprites,
+        currentSprite: newCurrent
+      };
+      spritesheetRef.current = updated;
+      return updated;
     });
   }
 
-  function SpritesheetTabs(){
+  function createSpritesheetTabs(sheet){
+    const currentTab = sheet.currentSprite;
+    const sprites = sheet.sprites;
     const tabs = [];
-    spritesheet.sprites.map((tab,index) => {
+    sprites.map((tab,index) => {
       const tabStyle = {
+        width:'fit-content',
         borderRadius:'10px 10px 0px 0px',
-        border: '1px solid black',
         padding:'4px',
         display:'flex',
         alignItems:'center',
       };
-      if(index === spritesheet.currentSprite){
+      if(index === currentTab){
         tabStyle.borderBottom = 'none';
+        tabStyle.borderLeft = '1px solid black';
+        tabStyle.borderRight = '1px solid black';
+        tabStyle.borderTop = '1px solid black';
       }
       else{
+        tabStyle.borderBottom = '1px solid black';
         tabStyle.borderLeft = 'none';
         tabStyle.borderTop = 'none';
         tabStyle.borderRight = 'none';
       }
-      tabs.push(<div className = "spritesheet_tab" style = {tabStyle} key = {index} 
+      tabs.push(<div className = "spritesheet_tab" style = {tabStyle} key = {tab.id} 
         onClick = {()=>{
-        const newSpritesheet = spritesheetRef.current.sprites;
-        newSpritesheet[spritesheetRef.current.currentSprite] = spriteRef.current;
-        setSpritesheet(prev => ({
-          ...prev,
-          currentSprite: index,
-          sprites: [...newSpritesheet], // shallow clone only the container
-        }));
-      }}>{tab.fileName}<div className = "delete_button" onClick = {()=>{deleteSprite(index)}}>{" x "}</div></div>);
+          setSpritesheet(prev => ({
+            ...prev,
+            currentSprite: index,
+          }));
+      }}>
+        <textarea key={tab.id+"_textarea"} style = {{color:'black',border:'none',borderRadius:'10px',padding:'none',fieldSizing:'content',height:'1em',resize:'none',alignContent:'center'}} 
+        onChange={(e) => {
+              const sprite = tab;
+              sprite.fileName = e.target.value;
+              setSpritesheet(prev => ({
+                ...prev,
+                sprites:[...prev.sprites]
+              }));
+            }} value = {sprites[index].fileName}/>
+        {sprites.length > 1 &&
+          <div className = "delete_button" onClick = {()=>{deleteSprite(index)}}>{" x "}</div>
+        }
+        </div>);
     });
-    tabs.push(<div key = {spritesheet.sprites.length} className = "button" onClick = {addNewSprite}>{" + "}</div>);
+    tabs.push(<div key = {tabs.length} className = "button" onClick = {addNewSprite}>{" + "}</div>);
     return(
-    <>
       <div className = "spritesheet_tabs">
         {tabs}
       </div>
-    </>
     );
   }
-
   return (
     <div className = "center_container">
       <div className = "app_container">
         <img id = "title" src = 'spritemaker/tamo_logo.png'/>
-        <div id = "grid_overlay" style = {{width:sprite.width*settings.canvasScale+'px',display:'block',position:'relative',gridArea:'canvas',pointerEvents:'none'}}>
-          {settings.overlayGrid && gridDivs.current}
-          <canvas id = "pixel_canvas" style = {{cursor:canvasCursor(),imageRendering:'pixelated',width:sprite.width*settings.canvasScale +'px',height:sprite.height*settings.canvasScale +'px'}}ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}></canvas>
+        <div id = "grid_overlay" style = {{width:spritesheet.sprites[spritesheet.currentSprite].width*settings.canvasScale+'px',display:'block',position:'relative',gridArea:'canvas',pointerEvents:'none'}}>
+          {settings.overlayGrid && gridDivs}
+          <canvas id = "pixel_canvas" style = {{cursor:canvasCursor(),imageRendering:'pixelated',width:spritesheet.sprites[spritesheet.currentSprite].width*settings.canvasScale +'px',height:spritesheet.sprites[spritesheet.currentSprite].height*settings.canvasScale +'px'}} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave = {handleMouseLeave}></canvas>
         </div>
-        <SpritesheetTabs></SpritesheetTabs>
+        {/* {spritesheetTabs} */}
+        {createSpritesheetTabs(spritesheet)}
         <div className = "ui_container">
           <div id = "preview_canvases" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',maxHeight:'150px',overflowY:'scroll'}}>
-            {sprite.frames.map((frame,index) => {
-              return <canvas key = {index} className = "preview_canvas" style = {{borderColor:(index == sprite.currentFrame)?'red':'inherit',cursor:'pointer',imageRendering:'pixelated',width:sprite.width*2+'px',height:sprite.height*2+'px'}} 
+            {spritesheet.sprites[spritesheet.currentSprite].frames.map((frame,index) => {
+              return <canvas key = {index} className = "preview_canvas" style = {{borderColor:(index == spritesheet.sprites[spritesheet.currentSprite].currentFrame)?'red':'inherit',cursor:'pointer',imageRendering:'pixelated',width:spritesheet.sprites[spritesheet.currentSprite].width*2+'px',height:spritesheet.sprites[spritesheet.currentSprite].height*2+'px'}} 
               ref = 
               {(el)=>{
                 if(el){
                   const ctx = el.getContext('2d');
-                  el.width = sprite.width;
-                  el.height = sprite.height;
-                  renderFrame(ctx,sprite,index,{x:0,y:0});
+                  el.width = spritesheet.sprites[spritesheet.currentSprite].width;
+                  el.height = spritesheet.sprites[spritesheet.currentSprite].height;
+                  renderFrame(ctx,spritesheet.sprites[spritesheet.currentSprite],index,{x:0,y:0});
                 }
               }}
               onClick = {(e)=>{
-                setSprite({...spriteRef.current,currentFrame:index})
+                const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+                sprite.currentFrame = index;
+                // force React to rerender
+                setSpritesheet(prev => ({
+                  ...prev,
+                  sprites: [...prev.sprites]
+                }));
               }
               }></canvas>;
             })}
           </div>
-          <div>frame -- {sprite.currentFrame+1} / {sprite.frames.length}</div>
+          <div>frame -- {spritesheet.sprites[spritesheet.currentSprite].currentFrame+1} / {spritesheet.sprites[spritesheet.currentSprite].frames.length}</div>
           {/* frame editing */}
           <div id = "button_holder" style = {{display:'flex'}}>
             <div className = "button" onClick = {addNewFrame}>{" + "}</div>
             <div className = "button" onClick = {deleteFrame}>{" - "}</div>
-            <div className = "button" onClick = {()=>{duplicateFrame(spriteRef.current.currentFrame)}}>{" dupe "}</div>
+            <div className = "button" onClick = {()=>{duplicateFrame(spritesheetRef.current.sprites[spritesheetRef.current.currentSprite].currentFrame)}}>{" dupe "}</div>
             <div className = "button" onClick = {reverseFrames}>{"reverse"}</div>
             <div className = "button" onClick = {settings.playing?()=>{
               stop();
@@ -775,17 +729,22 @@ function App() {
             }}>{settings.playing?"stop":"play"}</div>
           </div>
           <div style = {{display:'flex',alignItems:'center'}}>
-            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.width != sprite.width)?'blue':'inherit',color:(userInputDimensions.width != sprite.width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max="32" onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}}defaultValue={sprite.width}/>
+            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.width != spritesheet.sprites[spritesheet.currentSprite].width)?'blue':'inherit',color:(userInputDimensions.width != spritesheet.sprites[spritesheet.currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max="32" onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={spritesheet.sprites[spritesheet.currentSprite].width}/>
             <p style = {{fontStyle:'italic',fontFamily:'times'}}>x</p>
-            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.height != sprite.height)?'blue':'inherit',color:(userInputDimensions.height != sprite.height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max="16" onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprite.height}/>
-            {(userInputDimensions.height != sprite.height || userInputDimensions.width != sprite.width) &&
+            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.height != spritesheet.sprites[spritesheet.currentSprite].height)?'blue':'inherit',color:(userInputDimensions.height != spritesheet.sprites[spritesheet.currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max="16" onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={spritesheet.sprites[spritesheet.currentSprite].height}/>
+            {(userInputDimensions.height != spritesheet.sprites[spritesheet.currentSprite].height || userInputDimensions.width != spritesheet.sprites[spritesheet.currentSprite].width) &&
               <div className = "button" onClick = {resizeCanvasToNewDimensions}>resize</div>
             }
-            <input type="range" style = {{width:'100px'}}className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" onInput={(e) => setSettings({...settingsRef.current,canvasScale:parseFloat(e.target.value)})} />
+            <input type="range" style = {{width:'100px'}}className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" onInput={(e) => {
+                const newScale = parseFloat(e.target.value);
+                setSettings({...settingsRef.current,canvasScale:newScale});
+                const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+                setGridDivs(createGridDivs(sprite.width,sprite.height,newScale));
+              }} />
             <p>{settings.canvasScale+'x'}</p>
           </div>
           {/* pixel manipulation tools */}
-          <div>tools -- {settings.currentTool} {'['+currentMouseCoords.x+','+currentMouseCoords.y+']'}</div>
+          <div>tools -- {settings.currentTool} {currentMouseCoords &&'['+currentMouseCoords.x+','+currentMouseCoords.y+']'}</div>
           <div id = "button_holder" style = {{display:'flex'}}>
             <div className = "button" style = {{backgroundColor:settings.currentTool == 'pixel'?'blue':'inherit',color:settings.currentTool == 'pixel'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'pixel'})}}>{" pixel "}</div>
             <div className = "button" style = {{backgroundColor:settings.currentTool == 'line'?'blue':'inherit',color:settings.currentTool == 'line'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'line'})}}>{" line "}</div>
@@ -795,7 +754,7 @@ function App() {
           <div id = "button_holder" style = {{display:'flex'}}>
             <div className = "button" style = {{backgroundColor:settings.currentColor == 1?'inherit':'black',color:settings.currentColor == 1?'inherit':'white'}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
             <div className = "button" onClick = {clearFrame}>{"clear"}</div>
-            <div className = "button" onClick = {() => {const newFrames = [...spriteRef.current.frames]; newFrames[spriteRef.current.currentFrame] = spriteRef.current.frames[spriteRef.current.currentFrame].invert(); setSprite({...spriteRef.current,frames:newFrames});}}>{" invert "}</div>
+            <div className = "button" onClick = {invertFrame}>{" invert "}</div>
           </div>
           <div style = {{display:'flex'}}>
             <input type="range" className = "control_slider" id="frame_speed_slider" name="ms" min="100" max="1000" step="100" onInput={(e) => {window.clearTimeout(timeoutIDRef.current);setSettings({...settingsRef.current,frameSpeed:parseInt(e.target.value)});if(settingsRef.current.playing){
@@ -809,7 +768,16 @@ function App() {
             Drop images here, or click to upload.
             <input type="file" id="file-input" multiple accept="image/*" style = {{display:'none'}} onInput={(e) => loadImage(e.target.files)} />
           </label>          <p style = {{padding:'none',marginBottom:'0px',fontFamily:'chopin',fontWeight:'normal',fontSize:'20px'}}>Name Prefix:</p>
-          <textarea style = {{backgroundColor:'blue',color:'white',padding:'none',width:'100px',height:'25px',resize:'none',alignContent:'center'}} onInput={(e) => {e.preventDefault();setSprite({...spriteRef.current,fileName:e.target.value})}} defaultValue = {sprite.fileName}/>
+          <textarea style = {{fieldSizing:'content',height:'1em',borderRadius:'10px',backgroundColor:'blue',color:'white',padding:'4px',resize:'none',alignContent:'center'}} onInput={(e) => 
+            {
+              e.preventDefault();
+              const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+              sprite.fileName = e.target.value;
+              setSpritesheet(prev => ({
+                ...prev,
+                sprites:[...prev.sprites]
+              }));
+            }} value = {spritesheet.sprites[spritesheet.currentSprite].fileName}/>
           <div id = "file_download_container" style = {{width:'fit-content',border:'1px solid',paddingLeft:'10px',paddingRight:'10px',maxHeight:'150px',overflowY:'scroll'}}>
             <FrameDownloadLinks></FrameDownloadLinks>
           </div>
