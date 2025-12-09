@@ -4,6 +4,8 @@ import JSZip from 'jszip'
 import { Sprite , PixelFrame } from './Sprite';
 import { ColorPicker } from './components/ColorPicker';
 import { TabTitle } from './components/TabTitle';
+import { SelectionBox } from './SelectionBox';
+
 
 // helpful chatGPT react tip:
 /*
@@ -17,34 +19,58 @@ Important rule:
 //the UI. NOT the pixel data, which you redraw manually!
 
 function App() {
+  const [settings,setSettings] = useState({
+    overlayGhosting: true,
+    overlayGrid: true,
+    frameSpeed : 600,//speed in ms
+    currentTool: 'pixel',
+    currentColor:1,//1 for white, 0 for black
+    canvasScale:12,
+    playing:false,
+    lineStarted:false,
+    moveStarted:false,
+    overwriteWithBackground:false,
+    parseFilesToSpritesByName:false,
+    useAlphaAsBackground:false,
+    resizeCanvasToImage:true,
+    maxCanvasDimension:128,
+    palletteOpen:false,
+    settingsBoxOpen:false,
+    foregroundColor:'#ffffffff',
+    backgroundColor:'#000000ff',
+    overlayColor:'#4b4b4bff'
+  })
+  const settingsRef = useRef(settings);
+  const backupSettingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
   const zip = useRef(new JSZip());
   const startClickCoords = useRef({x:0,y:0});
   const pixelSaveState = useRef(undefined);
+  const mainCanvasRef = useRef(null);
+  //use this to clear the playNextFrame() timeout
+  const timeoutIDRef = useRef(null);
   const [currentMouseCoords,setCurrentMouseCoords] = useState({x:0,y:0});
-  const [selectionBox,setSelectionBox] = useState({
-    start:{x:0,y:0},
-    end:{x:0,y:0},
-    hasStarted:false,
-    active:false,
-    getWidth:function(){
-      return Math.abs(this.start.x-this.end.x);
-    },
-    getHeight:function(){
-      return Math.abs(this.start.y-this.end.y);
-    },
-    getOffsetLeft:function(){
-      return Math.min(this.start.x,this.end.x);
-    },
-    getOffsetTop:function(){
-      return Math.min(this.start.y,this.end.y);
-    }
-  });
+
+
+  const [selectionBox,setSelectionBox] = useState(SelectionBox());
   const selectionBoxRef = useRef(selectionBox);
   const selectedArea = useRef(null);
   useEffect(() => {
     selectionBoxRef.current = selectionBox;
-
   },[selectionBox]);
+
+  const selectionBoxStyle = {
+    border:'1px dashed red',
+    width:selectionBox.getWidth()*settings.canvasScale,
+    height:selectionBox.getHeight()*settings.canvasScale,
+    backgroundColor:'#ff00004c',
+    position:'absolute',
+    marginLeft:(selectionBox.getOffsetLeft()*settings.canvasScale-1)+'px',
+    marginTop:(selectionBox.getOffsetTop()*settings.canvasScale-1)+'px'
+  };
 
   //update the highlight on the divs whenever the mouse coords are updated
   useEffect(()=>{
@@ -71,13 +97,8 @@ function App() {
   const currentSpriteRef = useRef(currentSprite);
   useEffect(() => {
     currentSpriteRef.current = currentSprite;
-    const sprite = sprites[currentSprite];
-    setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
+    setGridDivs(createGridDivs(sprites[currentSprite].width,sprites[currentSprite].height,settingsRef.current.canvasScale));
   },[currentSprite]);
-
-  useEffect(() => {
-    renderCurrentFrameToMainCanvas();
-  },[sprites,currentSprite]);
 
   const [userInputDimensions,setUserInputDimensions] = useState({
     width:sprites[currentSprite].width,
@@ -88,35 +109,9 @@ function App() {
     userInputDimensionsRef.current = userInputDimensions;
   },[userInputDimensions]);
 
-  const [settings,setSettings] = useState({
-    overlayGhosting: true,
-    overlayGrid: true,
-    frameSpeed : 600,//speed in ms
-    currentTool: 'pixel',
-    currentColor:1,//1 for white, 0 for black
-    canvasScale:12,
-    playing:false,
-    lineStarted:false,
-    moveStarted:false,
-    parseFilesToSpritesByName:false,
-    useAlphaAsBackground:false,
-    resizeCanvasToImage:true,
-    maxCanvasDimension:128,
-    palletteOpen:false,
-    foregroundColor:'#ffffffff',
-    backgroundColor:'#000000ff',
-    overlayColor:'#4b4b4bff'
-  })
-  const settingsRef = useRef(settings);
-  const backupSettingsRef = useRef(settings);
   useEffect(() => {
-    settingsRef.current = settings;
     renderCurrentFrameToMainCanvas();
-  }, [settings]);
-
-  const mainCanvasRef = useRef(null);
-  //use this to clear the playNextFrame() timeout
-  const timeoutIDRef = useRef(null);
+  },[sprites,currentSprite,settings]);
 
 
   useEffect(() => {
@@ -161,10 +156,19 @@ function App() {
   function getClickCoords(e){
     const sprite = spritesRef.current[currentSpriteRef.current];
     const dims = e.target.getBoundingClientRect();
-    const clickCoords = {
-      x:e.pageX - dims.left,
-      y:e.pageY - dims.top
-    };
+    let clickCoords;
+    if(e.type === 'touchmove'){
+      clickCoords = {
+        x:e.touches[0].pageX - dims.left,
+        y:e.touches[0].pageY - dims.top
+      };
+    }
+    else{
+      clickCoords = {
+        x:e.pageX - dims.left,
+        y:e.pageY - dims.top
+      };
+    }
     //px per char
     const pixelDims = {
       width : dims.width / sprite.width,
@@ -172,6 +176,7 @@ function App() {
     };
     return {x: Math.trunc(clickCoords.x/pixelDims.width),x_rounded:Math.round(clickCoords.x/pixelDims.width),y:Math.trunc(clickCoords.y/pixelDims.height),y_rounded:Math.round(clickCoords.y/pixelDims.height)};
   }
+
   function handleMouseUp(e){
     const coords = getClickCoords(e);
     switch(settingsRef.current.currentTool){
@@ -189,14 +194,26 @@ function App() {
         break;
       case 'select':
         if(selectionBoxRef.current.hasStarted){
-          setSelectionBox(prev => {
-            return{
-              ...prev,
-              active:true,
-              hasStarted:false,
-              end:{x:coords.x_rounded,y:coords.y_rounded}
-            }
-          });
+          //if an area with a dimension less than 1 was selected, cancel the box
+          if(Math.abs(coords.x_rounded - selectionBoxRef.current.start.x) < 1 || Math.abs(coords.y_rounded - selectionBoxRef.current.start.y) < 1){
+            setSelectionBox(prev => {
+              return{
+                ...prev,
+                active:false,
+                hasStarted:false,
+              }
+            });
+          }
+          else{
+            setSelectionBox(prev => {
+              return{
+                ...prev,
+                active:true,
+                hasStarted:false,
+                end:{x:coords.x_rounded,y:coords.y_rounded}
+              }
+            });
+          }
         }
         break;
       
@@ -270,9 +287,9 @@ function App() {
   function handleMouseMove(e){
     const coords = getClickCoords(e);
     setCurrentMouseCoords(coords);
-    const sprite = spritesRef.current[currentSpriteRef.current];
     //detect if the mouse button is held down (necessary for dragging)
-    if(e.buttons){
+    if(e.buttons || (e.type === 'touchmove')){
+      const sprite = spritesRef.current[currentSpriteRef.current];
       switch(settingsRef.current.currentTool){
         case 'pixel':
           sprite.frames[sprite.currentFrame].setPixel(coords.x,coords.y,settingsRef.current.currentColor);
@@ -298,9 +315,9 @@ function App() {
               y: coords.y - startClickCoords.current.y
             };
             if(movement.x || movement.y){
-              sprite.frames[sprite.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,pixelSaveState.current.data);
               startClickCoords.current = coords;
               shiftPixels(movement);
+              // renderCurrentFrameToMainCanvas();
             }
           }
           break;
@@ -322,23 +339,21 @@ function App() {
 
   function shiftPixels(heading){
     const sprite = spritesRef.current[currentSpriteRef.current];
-    if(selectionBoxRef.current.active && selectedArea.current){
 
+    //if a selection box is active, use it to translate pixels
+    if(selectionBoxRef.current.active && selectedArea.current){
+      sprite.frames[sprite.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,pixelSaveState.current.data);
+      
       const bounds = {
         start: {x:Math.min(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.min(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)},
         end: {x:Math.max(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.max(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)}
       };
-
-      //clear out selected area
-      for(let x = bounds.start.x;x<bounds.end.x;x++){
-        for(let y = bounds.start.y;y<bounds.end.y;y++){
-          sprite.frames[sprite.currentFrame].setPixel(x,y,0);
-        }
-      }
       //put selected area back in, offset a bit
       for(let x = 0;x<selectedArea.current.width;x++){
         for(let y = 0;y<selectedArea.current.height;y++){
-          sprite.frames[sprite.currentFrame].setPixel(x+heading.x+bounds.start.x,y+heading.y+bounds.start.y,selectedArea.current.getPixel(x,y));
+          //check to see if background should overwrite foreground
+          if((!settingsRef.current.overwriteWithBackground && (selectedArea.current.getPixel(x,y) === 1)) || settingsRef.current.overwriteWithBackground)
+            sprite.frames[sprite.currentFrame].setPixel(x+heading.x+bounds.start.x,y+heading.y+bounds.start.y,selectedArea.current.getPixel(x,y));
         }
       }
       setSelectionBox(prev => {
@@ -360,7 +375,10 @@ function App() {
       }
       sprite.frames[sprite.currentFrame] = newFrame;
     }
-    renderCurrentFrameToMainCanvas();
+    setSprites(prev => (
+      [...prev]
+    ));
+    // renderCurrentFrameToMainCanvas();
   }
 
   function renderCurrentFrameToMainCanvas(){
@@ -487,11 +505,6 @@ function App() {
     if((e.target === document.body)){
       const sprite = spritesRef.current[currentSpriteRef.current];
       switch(e.key){
-        case 'Enter':
-          if(settingsRef.current.moveStarted){
-
-          }
-          break;
         case '1':
         case '2':
         case '3':
@@ -540,12 +553,16 @@ function App() {
           setSettings({...settingsRef.current,currentTool:'move'});
           break;
         case 'ArrowLeft':
+          e.preventDefault();
+          e.stopImmediatePropagation();
           sprite.previousFrame();
           setSprites(prev => (
             [...prev]
           ));
           break;
         case 'ArrowRight':
+          e.preventDefault();
+          e.stopImmediatePropagation();
           sprite.nextFrame();
           setSprites(prev => (
             [...prev]
@@ -553,7 +570,7 @@ function App() {
           break;
         case ' ':
           e.preventDefault();
-          e.stopPropagation();
+          e.stopImmediatePropagation();
           settingsRef.current.playing?stop():play();
           break;
         case 'Shift':
@@ -575,6 +592,7 @@ function App() {
   function downloadAllFramesAsBMPs(){
     const tempCanvas = document.createElement('canvas');
     const fileName = spritesRef.current[0].fileName.split('_')[0];
+    //call this function recursively, when each file is zipped it zips the next one!
     const addFilesToZip = (spriteIndex,frameIndex) => {
       const sprite = spritesRef.current[spriteIndex];
       tempCanvas.width = sprite.width;
@@ -628,10 +646,10 @@ function App() {
     const children = [];
     const sprite = sprites[currentSprite];
     for(let frame = 0; frame<sprite.frames.length; frame++){
-      children.push(<p key = {frame} style = {{color:'blue',textDecoration:'underline',cursor:'pointer'}} onClick = {(e) => downloadSingleFrameAsBMP(frame)}>{sprite.fileName+'_'+(frame+1)+'.bmp'}</p>);
+      children.push(<p key = {frame} className = "download_link" style = {{color:'blue',textDecoration:'underline',cursor:'pointer'}} onClick = {(e) => downloadSingleFrameAsBMP(frame)}>{sprite.fileName+'_'+(frame+1)+'.bmp'}</p>);
     }
     return(
-      <div style = {{display:'flex',flexDirection:'column',width:'fit-content',border:'1px solid',paddingLeft:'10px',paddingRight:'10px',height:'100px',overflowY:'scroll'}}>
+      <div style = {{display:'flex',flexDirection:'column',width:'fit-content',border:'1px solid',borderRadius:'10px',paddingLeft:'10px',paddingRight:'10px',height:'fit-content',maxHeight:'400px',overflowY:'scroll'}}>
         {children}
       </div>
     )
@@ -647,7 +665,7 @@ function App() {
       width:width*scale + 'px',
       height:height*scale + 'px',
       display:'grid',
-      position:'fixed',
+      position:'absolute',
       gridTemplateColumns:'repeat('+width+',1fr)',
       gridTemplateRows:'repeat('+height+',1fr)'
     }
@@ -706,6 +724,9 @@ function App() {
   }
 
   function loadFiles(fileList,sprite,startFrame){
+    if(fileList.length === 1){
+      fileList = [fileList[0]];
+    }
     fileList.map((file,index)=>{
       const reader = new FileReader();
       //callback once the file is read
@@ -728,7 +749,9 @@ function App() {
               }
             }
             sprite.resize(img.width,img.height);
-            setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
+            const newScale = Math.min(Math.trunc(350 / img.width),12);
+            setSettings({...settingsRef.current,canvasScale:newScale,overlayGrid:((img.width*img.height)<1024)?true:false});
+            setGridDivs(createGridDivs(sprite.width,sprite.height,newScale));
           }
           // draw image to main canvas
           const tempCanvas = document.createElement('canvas');
@@ -755,6 +778,7 @@ function App() {
     setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
   }
   function loadImage(files){
+    console.log(files);
     //parsing files by name
     if(settingsRef.current.parseFilesToSpritesByName){
       const filesByName = [];
@@ -788,11 +812,10 @@ function App() {
       setSprites(prev => (
         [...newSprites]
       ));
-      // setGridDivs(createGridDivs(newSprites[0].width,newSprites[0].height));
       return;
     }
     else{
-      //if there's just one file, load it onto the active frame
+      //load files like normal, into the current sprite
       loadFiles(files,spritesRef.current[currentSpriteRef.current],(files.length === 1)?spritesRef.current[currentSpriteRef.current].currentFrame:0);
       setSprites(prev => (
         [...prev]
@@ -803,6 +826,8 @@ function App() {
   function canvasCursor(){
     switch(settings.currentTool){
       case 'pixel':
+      case 'fill':
+      case 'select':
       case 'line':
         return 'pointer';
       case 'move':
@@ -846,7 +871,7 @@ function App() {
     });
   }
 
-  // function EditableTextArea
+
   function createSpritesheetTabs(sprites,currentTab){
     const tabs = [];
     sprites.map((tab,index) => {
@@ -866,7 +891,6 @@ function App() {
       }
       else{
         tabStyle.borderBottom = '1px solid black';
-        tabStyle.backgroundColor = 'transparent';
       }
       tabs.push(<div className = "spritesheet_tab" style = {tabStyle} key = {tab.id} 
         onClick = {()=>{
@@ -886,95 +910,131 @@ function App() {
     });
     tabs.push(<div key = {tabs.length} className = "button" onClick = {addNewSprite}>{" + "}</div>);
     return(
-      <div className = "spritesheet_tabs">
+      <div className = "spritesheet_tabs_container">
         {tabs}
         <div className = "button" onClick = {downloadAllFramesAsBMPs}>{"zip spritesheet"}</div>
       </div>
     );
   }
-  const selectionBoxStyle = {
-    border:'1px dashed red',
-    width:selectionBox.getWidth()*settings.canvasScale,
-    height:selectionBox.getHeight()*settings.canvasScale,
-    backgroundColor:'#ff00004c',
-    position:'fixed',
-    marginLeft:(selectionBox.getOffsetLeft()*settings.canvasScale-1)+'px',
-    marginTop:(selectionBox.getOffsetTop()*settings.canvasScale-1)+'px'
+
+  function createPreviewCanvases(){
+    return sprites[currentSprite].frames.map((frame,index) => {
+      return <canvas key = {index} className = "preview_canvas" style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'red':'inherit',cursor:'pointer',imageRendering:'pixelated',width:sprites[currentSprite].width*2+'px',height:sprites[currentSprite].height*2+'px'}} 
+        ref = 
+        {(el)=>{
+          if(el){
+            const ctx = el.getContext('2d');
+            el.width = sprites[currentSprite].width;
+            el.height = sprites[currentSprite].height;
+            renderFrame(ctx,sprites[currentSprite],index,{x:0,y:0});
+          }
+        }}
+        onClick = {(e)=>{
+          const sprite = spritesRef.current[currentSpriteRef.current];
+          sprite.currentFrame = index;
+          // force React to rerender
+          setSprites(prev => (
+            [...prev]
+          ));
+        }
+        }>
+        </canvas>;
+    });
+  }
+
+  const canvasBorderImageStyle = {
+    position:'absolute',
+    width:(sprites[currentSprite].width*2)*settings.canvasScale+'px',
+    height:(sprites[currentSprite].height*2)*settings.canvasScale+'px',
+    marginLeft:-((sprites[currentSprite].width)*settings.canvasScale)/2+'px',
+    marginTop:-((sprites[currentSprite].height)*settings.canvasScale)*0.45+'px'
+  }
+
+  const mainCanvasStyle = {
+    position:'absolute',
+    cursor:canvasCursor(),
+    imageRendering:'pixelated',
+    width:sprites[currentSprite].width*settings.canvasScale +'px',
+    height:sprites[currentSprite].height*settings.canvasScale +'px',
+    gridArea:'canvas',
+    pointerEvents: 'auto',
+    boxShadow:'5px 5px 5px #46788b'
   };
+
+  const canvasContainerStyle = {
+    display:'block',
+    position:'relative',
+    gridArea:'canvas',
+    pointerEvents:'none',
+    marginLeft:((sprites[currentSprite].width)*settings.canvasScale)*0.2+'px',
+    marginRight:((sprites[currentSprite].width)*settings.canvasScale)*0.2+'px',
+    marginTop:0,
+    marginBottom:((sprites[currentSprite].height)*settings.canvasScale)*0.2+'px',
+    width:sprites[currentSprite].width*settings.canvasScale +'px',
+    height:sprites[currentSprite].height*settings.canvasScale +'px',
+  };
+
   return (
     <div className = "center_container">
       <div className = "app_container">
-        <img id = "title" src = 'spritemaker/title.gif'/>
-        <div id = "grid_overlay" style = {{marginLeft:settings.canvasScale*4+'px',width:sprites[currentSprite].width*settings.canvasScale+'px',display:'block',position:'fixed',marginTop:'100px',gridArea:'canvas',pointerEvents:'none'}}>
+        {/* title image, gifs */}
+        <div id = "title_container">
+          <img id = "title_image" className = "transparent_img_drop_shadow" style = {{width:'200px'}} src = 'flipbook/title.gif'/>
+          <img id = "gif_1" className = "title_gif " src = 'flipbook/tamo_idle.gif' style = {{left:'45px',top:'20px'}} ></img>
+          <img id = "gif_2" className = "title_gif " src = 'flipbook/porcini_happy.gif' style = {{left:'255px',top:'20px'}} ></img>
+          <img id = "gif_3" className = "title_gif " src = 'flipbook/bug_angry.gif' style = {{left:'15px',bottom:'0px'}} ></img>
+          <img id = "gif_4" className = "title_gif " src = 'flipbook/boto_sad.gif' style = {{left:'295px',bottom:'0'}} ></img>
+        </div>
+        {/* grid overlay, border image, and main canvas */}
+        <div id = "canvas_container" style = {canvasContainerStyle}>
+          <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave = {handleMouseLeave} onTouchMove={handleMouseMove}></canvas>
           {settings.overlayGrid && gridDivs}
-          <img id = "canvas_border" src = 'spritemaker/border_transparent.png' style = {{position:'fixed',width:(sprites[currentSprite].width*2)*settings.canvasScale+'px',height:(sprites[currentSprite].height*2)*settings.canvasScale+'px',marginLeft:-((sprites[currentSprite].width)*settings.canvasScale)/2+'px',marginTop:-((sprites[currentSprite].height)*settings.canvasScale)*0.45+'px'}}></img>
+          {(sprites[currentSprite].width <= 32) && (sprites[currentSprite].height <= 32) &&
+          <img id = "canvas_border" className = "transparent_img_drop_shadow" src = 'flipbook/border_transparent.png' style = {canvasBorderImageStyle}></img>
+          }
           {(selectionBox.active || selectionBox.hasStarted) &&
             <div id = "selection_box" style = {selectionBoxStyle}></div>
           }
-          <canvas id = "pixel_canvas" style = {{cursor:canvasCursor(),imageRendering:'pixelated',width:sprites[currentSprite].width*settings.canvasScale +'px',height:sprites[currentSprite].height*settings.canvasScale +'px'}} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave = {handleMouseLeave}></canvas>
         </div>
+
         {/* spritesheet tabs */}
         {createSpritesheetTabs(sprites,currentSprite)}
+
+        {/* ui */}
         <div className = "ui_container">
-        <img id = "gif_1" className = "title_gif" src = 'spritemaker/tamo_idle.gif' style = {{left:'0px',top:'-70px'}} ></img>
-        <img id = "gif_2" className = "title_gif" src = 'spritemaker/porcini_happy.gif' style = {{left:'180px',top:'-60px'}} ></img>
-        <img id = "gif_3" className = "title_gif" src = 'spritemaker/bug_angry.gif' style = {{left:'-70px',bottom:'0px'}} ></img>
-        <img id = "gif_4" className = "title_gif" src = 'spritemaker/boto_sad.gif' style = {{left:'220px',bottom:'0'}} ></img>
-          <div id = "preview_canvases" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',height:'fit-content',overflowY:'scroll'}}>
-            {sprites[currentSprite].frames.map((frame,index) => {
-              return <canvas key = {index} className = "preview_canvas" style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'red':'inherit',cursor:'pointer',imageRendering:'pixelated',width:sprites[currentSprite].width*2+'px',height:sprites[currentSprite].height*2+'px'}} 
-              ref = 
-              {(el)=>{
-                if(el){
-                  const ctx = el.getContext('2d');
-                  el.width = sprites[currentSprite].width;
-                  el.height = sprites[currentSprite].height;
-                  renderFrame(ctx,sprites[currentSprite],index,{x:0,y:0});
-                }
-              }}
-              onClick = {(e)=>{
-                const sprite = spritesRef.current[currentSpriteRef.current];
-                sprite.currentFrame = index;
-                // force React to rerender
-                setSprites(prev => (
-                  [...prev]
-                ));
-              }
-              }></canvas>;
-            })}
+          {/* preview canvases */}
+          <div id = "preview_gallery_holder" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',height:'fit-content',overflowY:'scroll'}}>
+            {createPreviewCanvases()}
           </div>
           <div>frame -- {sprites[currentSprite].currentFrame+1} / {sprites[currentSprite].frames.length}</div>
+          
           {/* frame editing */}
-          <div id = "button_holder" style = {{display:'flex'}}>
+          <div className = "button_holder">
             <div className = "button" onClick = {addNewFrame}>{" + "}</div>
             <div className = "button" onClick = {deleteFrame}>{" - "}</div>
             <div className = "button" onClick = {()=>{duplicateFrame(spritesRef.current[currentSpriteRef.current].currentFrame)}}>{" dupe "}</div>
             <div className = "button" onClick = {reverseFrames}>{"reverse"}</div>
-            <div className = "button" onClick = {settings.playing?()=>{
-              stop();
-            }:()=>{
-              play();
-            }}>{settings.playing?"stop":"play"}</div>
+            <div className = "button" onClick = {settings.playing?()=>{stop();}:()=>{play();}}>{settings.playing?"stop":"play"}</div>
           </div>
           <div style = {{display:'flex',alignItems:'center'}}>
-            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'inherit',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width}/>
+            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'inherit',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width}/>
             <p style = {{fontStyle:'italic',fontFamily:'times'}}>x</p>
-            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'inherit',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height}/>
+            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'inherit',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height}/>
             {(userInputDimensions.height != sprites[currentSprite].height || userInputDimensions.width != sprites[currentSprite].width) &&
               <div className = "button" onClick = {resizeCanvasToNewDimensions}>resize</div>
             }
-            <input type="range" style = {{width:'100px'}}className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" onInput={(e) => {
+            <input type="range" style = {{width:'100px'}}className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="12" step="1" value = {settings.canvasScale} onInput={(e) => {
                 const newScale = parseFloat(e.target.value);
                 setSettings({...settingsRef.current,canvasScale:newScale});
-                const sprite = spritesRef.current[currentSpriteRef.current];
-                setGridDivs(createGridDivs(sprite.width,sprite.height,newScale));
+                setGridDivs(createGridDivs(spritesRef.current[currentSpriteRef.current].width,spritesRef.current[currentSpriteRef.current].height,newScale));
               }} />
             <p>{settings.canvasScale+'x'}</p>
           </div>
           {(userInputDimensions.width > 64 || userInputDimensions.height > 32) &&
             <p style = {{fontStyle:'italic',color:'red'}}>tamo's screen only supports 64x32 sprites</p>
           }
-          {/* pixel manipulation tools */}
+
+          {/* pixel/canvases manipulation tools */}
           <div>tools -- {settings.currentTool} {currentMouseCoords &&'['+currentMouseCoords.x+','+currentMouseCoords.y+']'}</div>
           <div className = "button_holder">
             <div className = "button" style = {{backgroundColor:settings.currentTool == 'pixel'?'blue':'inherit',color:settings.currentTool == 'pixel'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'pixel'})}}>{" pixel "}</div>
@@ -986,7 +1046,7 @@ function App() {
             <div className = "button" style = {{backgroundColor:settings.currentTool == 'move'?'blue':'inherit',color:settings.currentTool == 'move'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}>{" move "}</div>
           </div>
           <div className = "button_holder">
-            <div className = "button" style = {{backgroundColor:settings.currentColor == 1?settings.foregroundColor:settings.backgroundColor}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
+            <div className = "button" style = {{border:'1px solid black',backgroundColor:settings.currentColor == 1?settings.foregroundColor:settings.backgroundColor}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
             <div className = "button" onClick = {clearFrame}>{"clear"}</div>
             <div className = "button" onClick = {invertFrame}>{" ^-1 "}</div>
             <div className = "button" style = {{backgroundColor:settings.palletteOpen?'blue':'inherit',color:settings.palletteOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,palletteOpen:!settingsRef.current.palletteOpen})}>{" color "}</div>
@@ -998,23 +1058,40 @@ function App() {
               <ColorPicker label = "ghosting" callback = {(val)=>{setSettings({...settingsRef.current,overlayColor:val})}} defaultValue = {settings.overlayColor}></ColorPicker>
             </div>
           }
+          {/* playback speed slider */}
           <div className='button_holder'>
             <input type="range" className = "control_slider" id="frame_speed_slider" name="ms" min="100" max="1000" step="100" onInput={(e) => {window.clearTimeout(timeoutIDRef.current);setSettings({...settingsRef.current,frameSpeed:parseInt(e.target.value)});if(settingsRef.current.playing){
               timeoutIDRef.current = window.setTimeout(playNextFrame,parseInt(e.target.value));
             }}} />
             <p>{settings.frameSpeed+'ms'}</p>
           </div>
-          <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overlayGhosting:!settingsRef.current.overlayGhosting});}}>{settings.overlayGhosting?(<>ghosting: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON"}</span></>):"ghosting: OFF"}</div>
-          <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overlayGrid:!settingsRef.current.overlayGrid});}}>{settings.overlayGrid?(<>grid: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"grid: OFF"}</div>
+
+          {/* drop zone */}
           <label id="drop-zone">
             Drop images here, or click to upload.
             <input type="file" id="file-input" multiple accept="image/*" style = {{display:'none'}} onInput={(e) => loadImage(e.target.files)} />
           </label>
-          <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,resizeCanvasToImage:!settingsRef.current.resizeCanvasToImage});}}>{settings.resizeCanvasToImage?(<>resize to uploaded image: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"resize to uploaded image: OFF"}</div>
-          <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,useAlphaAsBackground:!settingsRef.current.useAlphaAsBackground});}}>{settings.useAlphaAsBackground?(<>use transparency to determine background: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"use transparency to determine background: OFF"}</div>
-          <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,parseFilesToSpritesByName:!settingsRef.current.parseFilesToSpritesByName});}}>{settings.parseFilesToSpritesByName?(<>autogen sprites from filenames: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"autogen sprites from filenames: OFF"}</div>
+
+          {/* settings */}
+          <div className = 'button_holder' style = {{width:'200px',padding:'0px 1em',alignItems:'center',flexDirection:'column'}}>
+            <div className = "button" style = {{backgroundColor:settings.settingsBoxOpen?'blue':'inherit',color:settings.settingsBoxOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,settingsBoxOpen:!settingsRef.current.settingsBoxOpen})}>{" settings "}</div>
+          </div>
+          {settings.settingsBoxOpen &&
+          <div style = {{borderLeft:'1px solid black',width:'fit-content',padding:'10px'}}>
+            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overwriteWithBackground:!settingsRef.current.overwriteWithBackground});}}>{settings.overwriteWithBackground?(<>background overwrites foreground when moving: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"background overwrites foreground when moving: OFF"}</div>
+            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overlayGhosting:!settingsRef.current.overlayGhosting});}}>{settings.overlayGhosting?(<>ghosting: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON"}</span></>):"ghosting: OFF"}</div>
+            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overlayGrid:!settingsRef.current.overlayGrid});}}>{settings.overlayGrid?(<>grid: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"grid: OFF"}</div>
+            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,resizeCanvasToImage:!settingsRef.current.resizeCanvasToImage});}}>{settings.resizeCanvasToImage?(<>resize to uploaded image: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"resize to uploaded image: OFF"}</div>
+            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,useAlphaAsBackground:!settingsRef.current.useAlphaAsBackground});}}>{settings.useAlphaAsBackground?(<>use transparency to determine background: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"use transparency to determine background: OFF"}</div>
+            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,parseFilesToSpritesByName:!settingsRef.current.parseFilesToSpritesByName});}}>{settings.parseFilesToSpritesByName?(<>autogen sprites from filenames: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"autogen sprites from filenames: OFF"}</div>
+          </div>
+          }
+        </div>
+
+        {/* download links */}
+        <div id = "download_link_container">
           <p style = {{padding:'none',marginBottom:'0px',fontFamily:'chopin',fontWeight:'normal',fontSize:'20px'}}>Name Prefix:</p>
-          <textarea style = {{fieldSizing:'content',height:'1em',borderRadius:'10px',backgroundColor:'blue',color:'white',padding:'4px',resize:'none',alignContent:'center'}} onInput={(e) => 
+          <textarea style = {{fieldSizing:'content',height:'1em',borderRadius:'6px',backgroundColor:'blue',color:'white',padding:'4px',resize:'none',alignContent:'center'}} onInput={(e) => 
             {
               e.preventDefault();
               const sprite = spritesRef.current[currentSpriteRef.current];
@@ -1023,9 +1100,7 @@ function App() {
                 [...prev]
               ));
             }} value = {sprites[currentSprite].fileName}/>
-          {/* <div id = "file_download_container" style = {{width:'fit-content',border:'1px solid',paddingLeft:'10px',paddingRight:'10px',height:'100px',overflowY:'scroll'}}> */}
-            <FrameDownloadLinks></FrameDownloadLinks>
-          {/* </div> */}
+          <FrameDownloadLinks></FrameDownloadLinks>
           <div style = {{dispaly:'flex'}}>
             <p>{'('+getTotalImageDataSize()+' bytes of pixel data)'}</p>
           </div>

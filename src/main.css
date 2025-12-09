@@ -1,6 +1,6 @@
 @font-face {
     font-family: chopin;
-    src: url('spritemaker/ChopinScript.ttf');
+    src: url('flipbook/ChopinScript.ttf');
 }
 
 .center_container{
@@ -11,20 +11,26 @@
     top:0;
     display: flex;
 }
+
 .app_container{
     overflow-y: scroll;
     width:100%;
-    height:fit-content;
+    height:100%;
     position:relative;
-    padding-top:80px;
-    padding-left:100px;
-    margin:auto;
     display:grid;
-    grid-template-rows: 100px auto auto;
-    grid-template-columns: 300px 200px;
-    grid-template-areas: "title title"
-                         "spritesheet_tabs spritesheet_tabs"
-                         "ui canvas";
+    grid-template-rows: max-content max-content auto;
+    grid-template-columns: max-content fit-content(500px) 250px;
+    grid-template-areas: "title title none"
+                         "spritesheet_tabs null none"
+                         "ui canvas downloadlinks";
+}
+
+#title_container{
+    padding-top:80px;
+    padding-left:75px;
+    position:relative;
+    grid-area:title;
+    image-rendering: pixelated;
 }
 .grid_holder{
     display:grid;
@@ -38,24 +44,21 @@
     border-left:none;
     border-top:none;
 }
-#title{
-    font-family: stepchild_cursive;
-    grid-area:title;
-    font-size:100px;
-    width:200px;
-    image-rendering: pixelated;
-
-}
 .title_gif{
     position:absolute;
     image-rendering:pixelated;
     width:60px;
     grid-area:title;
 }
+
 .ui_container{
+    padding-left:80px;
     display: block;
     grid-area: ui;
-    width:100%;
+    margin:auto;
+    margin-top: 0;
+    margin-bottom: 0;
+    width:fit-content;
     height:fit-content;
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size:12px;
@@ -82,15 +85,15 @@
     background-color:#0000ff;
     color:#ffffff;
 }
-.spritesheet_tabs{
+.spritesheet_tabs_container{
     grid-area: spritesheet_tabs;
     display:flex;
     height:fit-content;
-    width:100%;
+    max-width:400px;
+    /* width: */
     flex-wrap: wrap;
-    /* row-gap: -4px; */
     padding-top:4px;
-
+    padding-left:80px;
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size:12px;
     overflow-x:scroll;
@@ -99,12 +102,13 @@
     transition:0.1s;
     margin-top:-4px;
     border:1px dashed transparent;
+    background-color: transparent;
 }
 .spritesheet_tab:hover{
     /* box-shadow:2px -2px 2px rgb(0, 42, 255); */
     cursor:pointer;
     border:1px dashed red;
-    /* background-color: #ff0000; */
+    background-color: white;
     /* color:white; */
 }
 
@@ -130,69 +134,6 @@
 .spritesheet_tab:hover .delete_button{
     visibility:visible;
 };
-.dimension_input{
-    white-space: pre;
-    color:black;
-    background-color:transparent;
-    width:fit-content;
-    height:25px;
-    display:block;
-    cursor:pointer;
-    border-radius: 10px;
-    border:1px solid;
-    margin:2px;
-    padding:4px;
-    padding-top:0;
-    padding-bottom:0;
-    margin-top:0;
-    margin-bottom:0;
-    transition:0.25s;
-    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-}
-.dimension_input:hover{
-    background-color:#0000ff;
-    color:#ffffff;
-}
-#canvas_border{
-    display:grid;
-    position:fixed;
-    image-rendering: pixelated;
-}
-#pixel_canvas{
-    grid-area:canvas;
-    display:block;
-    pointer-events: auto; 
-    box-shadow:1px 1px 100px rgb(0, 225, 255);
-}
-.preview_canvas{
-    border:4px solid black;
-    margin:1px;
-    border-radius:10px;
-    transition:0.1s;
-}
-.preview_canvas:hover{
-    filter:brightness(0.4);
-}
-/* file dropper */
-#drop-zone {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100px;
-    height: 50px;
-    padding: 1em;
-    margin:10px;
-    border: 1px dashed rgb(113, 136, 0);
-    border-radius: 4px;
-    color: rgb(113, 136, 0);
-    background-color: beige;
-    cursor: pointer;
-    transition:0.1s;
-}
-#drop-zone:hover{
-    background-color:blue;
-    border: 1px solid rgb(113, 136, 0);
-}
 
 .colorpicker .react-colorful__hue-pointer,
 .colorpicker .react-colorful__saturation-pointer,
@@ -208,4 +149,115 @@
     writing-mode: sideways-lr;
     color:white;
     font-weight: bold;
+}
+
+.dimension_input{
+    white-space: pre;
+    color:black;
+    background-color:transparent;
+    width:fit-content;
+    height:25px;
+    display:block;
+    cursor:pointer;
+    border-radius: 10px;
+    border:1px solid;
+    margin:2px;
+    padding:4px;
+    padding-top:0px;
+    padding-bottom:0px;
+    margin-top:0;
+    margin-bottom:0;
+    transition:0.25s;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.dimension_input:hover{
+    background-color:#0000ff;
+    color:#ffffff;
+}
+#canvas_border{
+    display:grid;
+    position:fixed;
+    image-rendering: pixelated;
+}
+.transparent_img_drop_shadow{
+    filter:drop-shadow(2px 2px 5px #46788b);
+}
+.preview_canvas{
+    border:4px solid black;
+    margin:1px;
+    border-radius:10px;
+    transition:0.1s;
+}
+.preview_canvas:hover{
+    filter:brightness(0.4);
+}
+/* file dropper */
+#drop-zone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 200px;
+    height: 50px;
+    padding: 1em;
+    margin:10px;
+    border: 1px dashed rgb(113, 136, 0);
+    border-radius: 4px;
+    color: rgb(113, 136, 0);
+    background-color: beige;
+    cursor: pointer;
+    transition:0.1s;
+}
+#drop-zone:hover{
+    background-color:blue;
+    border: 1px solid rgb(113, 136, 0);
+}
+
+#download_link_container{
+    grid-area:downloadlinks;
+    height:fit-content;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size:12px;
+    margin:auto;
+    margin-top:0;
+}
+
+.download_link:focus{
+    background-color:black;
+    color:white;
+    /* color: purple; Or any other desired color value */
+}
+
+@media all and (max-width: 500px) {
+    .app_container{
+        overflow-y: scroll;
+        width:fit-content;
+        margin:auto;
+        height:100%;
+        position:relative;
+        display:grid;
+        grid-template-rows: max-content max-content max-content max-content;
+        grid-template-columns: 100%;
+        grid-template-areas: "title"
+                            "canvas"
+                            "spritesheet_tabs"
+                            "ui"
+                            "downloadlinks";
+    }
+    .ui_container{
+        padding-left: 0;
+        margin:auto;
+        max-width: 350px;
+    }
+    .spritesheet_tabs_container{
+        padding-left: 0;
+        max-width: 350px;
+        width:fit-content;
+        margin:auto;
+    }
+    .canvas_container{
+        margin:auto;
+    }
+    #main_canvas{
+        touch-action: none;
+    }
 }
