@@ -2,25 +2,26 @@
     font-family: chopin;
     src: url('spritemaker/ChopinScript.ttf');
 }
+
 .center_container{
     width:100%;
     height:100%;
     position:absolute;
     left:0;
     top:0;
-    /* align-items: center; */
     display: flex;
-    overflow-y: scroll;
 }
 .app_container{
-    width:600px;
-    position:fixed;
-    top:100px;
-    left:25%;
+    overflow-y: scroll;
+    width:100%;
+    height:fit-content;
+    position:relative;
+    padding-top:80px;
+    padding-left:100px;
     margin:auto;
     display:grid;
-    grid-template-rows: 100px 50px auto;
-    grid-template-columns: auto auto;
+    grid-template-rows: 100px auto auto;
+    grid-template-columns: 300px 200px;
     grid-template-areas: "title title"
                          "spritesheet_tabs spritesheet_tabs"
                          "ui canvas";
@@ -43,20 +44,29 @@
     font-size:100px;
     width:200px;
     image-rendering: pixelated;
+
+}
+.title_gif{
+    position:absolute;
+    image-rendering:pixelated;
+    width:60px;
+    grid-area:title;
 }
 .ui_container{
     display: block;
     grid-area: ui;
-    /* width:100%; */
-    /* margin-top:100px; */
+    width:100%;
     height:fit-content;
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size:12px;
 }
+.button_holder{
+    display:flex;
+}
 .button{
     white-space: pre;
     color:black;
-    background-color:transparent;
+    background-color:white;
     width:fit-content;
     display:block;
     cursor:pointer;
@@ -76,13 +86,26 @@
     grid-area: spritesheet_tabs;
     display:flex;
     height:fit-content;
+    width:100%;
+    flex-wrap: wrap;
+    /* row-gap: -4px; */
+    padding-top:4px;
+
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size:12px;
+    overflow-x:scroll;
+}
+.spritesheet_tab{
+    transition:0.1s;
+    margin-top:-4px;
+    border:1px dashed transparent;
 }
 .spritesheet_tab:hover{
-    box-shadow:2px -2px 2px rgb(0, 42, 255);
+    /* box-shadow:2px -2px 2px rgb(0, 42, 255); */
     cursor:pointer;
-    
+    border:1px dashed red;
+    /* background-color: #ff0000; */
+    /* color:white; */
 }
 
 .delete_button{
@@ -96,6 +119,7 @@
     border-radius: 10px;
     border:1px solid;
     padding:2px;
+    margin-left:2px;
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     align-content: center;
 }
@@ -129,6 +153,11 @@
     background-color:#0000ff;
     color:#ffffff;
 }
+#canvas_border{
+    display:grid;
+    position:fixed;
+    image-rendering: pixelated;
+}
 #pixel_canvas{
     grid-area:canvas;
     display:block;
@@ -138,6 +167,11 @@
 .preview_canvas{
     border:4px solid black;
     margin:1px;
+    border-radius:10px;
+    transition:0.1s;
+}
+.preview_canvas:hover{
+    filter:brightness(0.4);
 }
 /* file dropper */
 #drop-zone {
@@ -158,4 +192,20 @@
 #drop-zone:hover{
     background-color:blue;
     border: 1px solid rgb(113, 136, 0);
+}
+
+.colorpicker .react-colorful__hue-pointer,
+.colorpicker .react-colorful__saturation-pointer,
+.colorpicker .react-colorful__alpha-pointer {
+    width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    border:1px solid white;
+}
+
+.colorpicker_label{
+    visibility: visible;
+    writing-mode: sideways-lr;
+    color:white;
+    font-weight: bold;
 }

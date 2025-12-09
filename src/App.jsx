@@ -1,9 +1,9 @@
-import { useState , useEffect , useRef, useLayoutEffect} from 'react'
+import { useState , useEffect , useRef} from 'react'
 import './main.css';
 import JSZip from 'jszip'
-import { v4 as uuid } from "uuid";
-import { Sprite } from './Sprite';
-import { PixelFrame } from './PixelFrame';
+import { Sprite , PixelFrame } from './Sprite';
+import { ColorPicker } from './components/ColorPicker';
+import { TabTitle } from './components/TabTitle';
 
 // helpful chatGPT react tip:
 /*
@@ -21,6 +21,30 @@ function App() {
   const startClickCoords = useRef({x:0,y:0});
   const pixelSaveState = useRef(undefined);
   const [currentMouseCoords,setCurrentMouseCoords] = useState({x:0,y:0});
+  const [selectionBox,setSelectionBox] = useState({
+    start:{x:0,y:0},
+    end:{x:0,y:0},
+    hasStarted:false,
+    active:false,
+    getWidth:function(){
+      return Math.abs(this.start.x-this.end.x);
+    },
+    getHeight:function(){
+      return Math.abs(this.start.y-this.end.y);
+    },
+    getOffsetLeft:function(){
+      return Math.min(this.start.x,this.end.x);
+    },
+    getOffsetTop:function(){
+      return Math.min(this.start.y,this.end.y);
+    }
+  });
+  const selectionBoxRef = useRef(selectionBox);
+  const selectedArea = useRef(null);
+  useEffect(() => {
+    selectionBoxRef.current = selectionBox;
+
+  },[selectionBox]);
 
   //update the highlight on the divs whenever the mouse coords are updated
   useEffect(()=>{
@@ -30,33 +54,34 @@ function App() {
     }
     if(currentMouseCoords === null)
       return;
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     const index = currentMouseCoords.y * sprite.width + currentMouseCoords.x;
     const targetDiv = document.getElementById("grid_div_"+index);
     if(targetDiv)
       targetDiv.style.backgroundColor = '#04ff008f';
   },[currentMouseCoords]);
 
-  const [spritesheet,setSpritesheet] = useState({
-    sprites:[Sprite()],
-    currentSprite:0,
-    getSprite:function(){
-      return this.sprites[this.currentSprite];
-    }
-  });
-  const [currentSprite,setCurrentSprite] = useState(0);
   const [sprites,setSprites] = useState([Sprite()]);
-  
-  const spritesheetRef = useRef(spritesheet);
+  const spritesRef = useRef(sprites);
   useEffect(() => {
-    spritesheetRef.current = spritesheet;
-    // setSpritesheetTabs(createSpritesheetTabs(spritesheet));
+    spritesRef.current = sprites;
+  },[sprites]);
+
+  const [currentSprite,setCurrentSprite] = useState(0);
+  const currentSpriteRef = useRef(currentSprite);
+  useEffect(() => {
+    currentSpriteRef.current = currentSprite;
+    const sprite = sprites[currentSprite];
+    setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
+  },[currentSprite]);
+
+  useEffect(() => {
     renderCurrentFrameToMainCanvas();
-  },[spritesheet]);
+  },[sprites,currentSprite]);
 
   const [userInputDimensions,setUserInputDimensions] = useState({
-    width:spritesheet.sprites[spritesheet.currentSprite].width,
-    height:spritesheet.sprites[spritesheet.currentSprite].height
+    width:sprites[currentSprite].width,
+    height:sprites[currentSprite].height
   });
   const userInputDimensionsRef = useRef(userInputDimensions);
   useEffect(() => {
@@ -66,12 +91,21 @@ function App() {
   const [settings,setSettings] = useState({
     overlayGhosting: true,
     overlayGrid: true,
-    frameSpeed : 1000,//speed in ms
+    frameSpeed : 600,//speed in ms
     currentTool: 'pixel',
     currentColor:1,//1 for white, 0 for black
-    canvasScale:16,
+    canvasScale:12,
     playing:false,
-    lineStarted:false
+    lineStarted:false,
+    moveStarted:false,
+    parseFilesToSpritesByName:false,
+    useAlphaAsBackground:false,
+    resizeCanvasToImage:true,
+    maxCanvasDimension:128,
+    palletteOpen:false,
+    foregroundColor:'#ffffffff',
+    backgroundColor:'#000000ff',
+    overlayColor:'#4b4b4bff'
   })
   const settingsRef = useRef(settings);
   const backupSettingsRef = useRef(settings);
@@ -125,7 +159,7 @@ function App() {
   },[]);
 
   function getClickCoords(e){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     const dims = e.target.getBoundingClientRect();
     const clickCoords = {
       x:e.pageX - dims.left,
@@ -136,9 +170,10 @@ function App() {
       width : dims.width / sprite.width,
       height : dims.height / sprite.height,
     };
-    return {x: Math.trunc(clickCoords.x/pixelDims.width),y:Math.trunc(clickCoords.y/pixelDims.height)};
+    return {x: Math.trunc(clickCoords.x/pixelDims.width),x_rounded:Math.round(clickCoords.x/pixelDims.width),y:Math.trunc(clickCoords.y/pixelDims.height),y_rounded:Math.round(clickCoords.y/pixelDims.height)};
   }
   function handleMouseUp(e){
+    const coords = getClickCoords(e);
     switch(settingsRef.current.currentTool){
       case 'line':
         setSettings({
@@ -146,12 +181,31 @@ function App() {
           lineStarted : false
         });
         break;
+      case 'move':
+        setSettings({
+          ...settingsRef.current,
+          moveStarted : false
+        });
+        break;
+      case 'select':
+        if(selectionBoxRef.current.hasStarted){
+          setSelectionBox(prev => {
+            return{
+              ...prev,
+              active:true,
+              hasStarted:false,
+              end:{x:coords.x_rounded,y:coords.y_rounded}
+            }
+          });
+        }
+        break;
+      
     }
   }
   function handleMouseDown(e){
     const coords = getClickCoords(e);
     startClickCoords.current = coords;
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     switch(settingsRef.current.currentTool){
       case 'pixel':
         const newFrames = sprite.frames;
@@ -171,6 +225,42 @@ function App() {
           ...settingsRef.current,
           lineStarted : true
         });
+      case 'move':
+        if(!settingsRef.current.moveStarted){
+          //store the selected area
+          if(selectionBox.active){
+            selectedArea.current = PixelFrame(selectionBox.getWidth(),selectionBox.getHeight(),0);
+            pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
+            const bounds = {
+              start: {x:Math.min(selectionBox.start.x,selectionBox.end.x),y:Math.min(selectionBox.start.y,selectionBox.end.y)},
+              end: {x:Math.max(selectionBox.start.x,selectionBox.end.x),y:Math.max(selectionBox.start.y,selectionBox.end.y)}
+            };
+            //copy area into pixel array
+            for(let x = 0; x<selectionBox.getWidth(); x++){
+              for(let y = 0; y<selectionBox.getHeight(); y++){
+                selectedArea.current.setPixel(x,y,sprites[currentSprite].frames[sprites[currentSprite].currentFrame].getPixel(x+bounds.start.x,y+bounds.start.y));
+                //clear out pixels from canvas backup
+                pixelSaveState.current.setPixel(x+bounds.start.x,y+bounds.start.y,0);
+              }
+            }
+            //make a backup of the whole canvas
+          }
+          setSettings({
+            ...settingsRef.current,
+            moveStarted : true
+          });
+        }
+        break;
+      case 'select':
+        setSelectionBox(prev => {
+          return{
+            ...prev,
+            active:false,
+            hasStarted:true,
+            start:{x:coords.x_rounded,y:coords.y_rounded},
+            end:{x:coords.x_rounded,y:coords.y_rounded}
+          }
+        })
         break;
     }
   }
@@ -180,7 +270,7 @@ function App() {
   function handleMouseMove(e){
     const coords = getClickCoords(e);
     setCurrentMouseCoords(coords);
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     //detect if the mouse button is held down (necessary for dragging)
     if(e.buttons){
       switch(settingsRef.current.currentTool){
@@ -202,13 +292,28 @@ function App() {
         }
           break;
         case 'move':
-          const movement = {
-            x: coords.x - startClickCoords.current.x,
-            y: coords.y - startClickCoords.current.y
-          };
-          if(movement.x || movement.y){
-            startClickCoords.current = coords;
-            shiftPixels(movement);
+          if(settingsRef.current.moveStarted){
+            const movement = {
+              x: coords.x - startClickCoords.current.x,
+              y: coords.y - startClickCoords.current.y
+            };
+            if(movement.x || movement.y){
+              sprite.frames[sprite.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,pixelSaveState.current.data);
+              startClickCoords.current = coords;
+              shiftPixels(movement);
+            }
+          }
+          break;
+        case 'select':
+          if(selectionBox.hasStarted){
+            setSelectionBox(prev => {
+              return{
+                ...prev,
+                active:false,
+                hasStarted:true,
+                end:{x:coords.x_rounded,y:coords.y_rounded}
+              }
+            })
           }
           break;
       }
@@ -216,16 +321,45 @@ function App() {
   }
 
   function shiftPixels(heading){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
-    const newFrame = PixelFrame(sprite.width, sprite.height, 0);
-    
-    //copy over data, but shifted
-    for(let x = 0; x<sprite.frames[sprite.currentFrame].width; x++){
-      for(let y = 0; y<sprite.frames[sprite.currentFrame].height; y++){
-        newFrame.setPixel(x+heading.x,y+heading.y,sprite.frames[sprite.currentFrame].getPixel(x,y));
+    const sprite = spritesRef.current[currentSpriteRef.current];
+    if(selectionBoxRef.current.active && selectedArea.current){
+
+      const bounds = {
+        start: {x:Math.min(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.min(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)},
+        end: {x:Math.max(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.max(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)}
+      };
+
+      //clear out selected area
+      for(let x = bounds.start.x;x<bounds.end.x;x++){
+        for(let y = bounds.start.y;y<bounds.end.y;y++){
+          sprite.frames[sprite.currentFrame].setPixel(x,y,0);
+        }
       }
+      //put selected area back in, offset a bit
+      for(let x = 0;x<selectedArea.current.width;x++){
+        for(let y = 0;y<selectedArea.current.height;y++){
+          sprite.frames[sprite.currentFrame].setPixel(x+heading.x+bounds.start.x,y+heading.y+bounds.start.y,selectedArea.current.getPixel(x,y));
+        }
+      }
+      setSelectionBox(prev => {
+        return{
+          ...prev,
+          start:{x:bounds.start.x+heading.x,y:bounds.start.y+heading.y},
+          end:{x:bounds.end.x+heading.x,y:bounds.end.y+heading.y}
+        }
+      });
     }
-    sprite.frames[sprite.currentFrame] = newFrame;
+    else{
+      const newFrame = PixelFrame(sprite.width, sprite.height, 0);
+      
+      //copy over data, but shifted
+      for(let x = 0; x<sprite.frames[sprite.currentFrame].width; x++){
+        for(let y = 0; y<sprite.frames[sprite.currentFrame].height; y++){
+          newFrame.setPixel(x+heading.x,y+heading.y,sprite.frames[sprite.currentFrame].getPixel(x,y));
+        }
+      }
+      sprite.frames[sprite.currentFrame] = newFrame;
+    }
     renderCurrentFrameToMainCanvas();
   }
 
@@ -234,7 +368,7 @@ function App() {
     if(!canvas)
       return;
 
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
 
     //figure out the last frame, to draw ghosting
     let previousFrame = undefined;
@@ -252,12 +386,12 @@ function App() {
     //draw over each pixel
     for(let x = 0; x<sprite.width; x++){
       for(let y = 0; y<sprite.height; y++){
-        let bgColor = "#000000";
+        let bgColor = settingsRef.current.backgroundColor;
         //if there's a previous frame, ghost it
         if(previousFrame !== undefined  && settingsRef.current.overlayGhosting){
-          bgColor = sprite.frames[previousFrame].getPixel(x,y)?"#555555ff":bgColor;
+          bgColor = sprite.frames[previousFrame].getPixel(x,y)?settingsRef.current.overlayColor:bgColor;
         }
-        context.fillStyle = sprite.frames[sprite.currentFrame].getPixel(x,y)?"#FFFFFF":bgColor;
+        context.fillStyle = sprite.frames[sprite.currentFrame].getPixel(x,y)?settingsRef.current.foregroundColor:bgColor;
         context.fillRect(x,y,1,1);
       }
     }
@@ -269,53 +403,49 @@ function App() {
     //draw over each pixel
     for(let x = 0; x<sprite.width; x++){
       for(let y = 0; y<sprite.height; y++){
-        context.fillStyle = sprite.frames[frame].getPixel(x,y)?"#FFFFFF":"#000000";
+        context.fillStyle = sprite.frames[frame].getPixel(x,y)?settingsRef.current.foregroundColor:settingsRef.current.backgroundColor;
         context.fillRect(x+offset.x,y+offset.y,1,1);
       }
     }
   }
 
   function playNextFrame(){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     sprite.nextFrame();
-    setSpritesheet(prev => ({
-      ...prev,
-      sprites:[...prev.sprites]
-    }));
+    setSprites(prev => (
+      [...prev]
+    ));
     timeoutIDRef.current = window.setTimeout(playNextFrame,settingsRef.current.frameSpeed);
   }
 
   function clearFrame(){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     sprite.frames[sprite.currentFrame] = PixelFrame(sprite.width, sprite.height, 0);
-    setSpritesheet(prev => ({
-      ...prev,
-      sprites:[...prev.sprites]
-    }));
+    setSprites(prev => (
+      [...prev]
+    ));
   }
 
   function invertFrame(){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     sprite.frames[sprite.currentFrame].invert();
-    setSpritesheet(prev => ({
-      ...prev,
-      sprites:[...prev.sprites]
-    }));
+    setSprites(prev => (
+      [...prev]
+    ));
   }
 
   function addNewFrame(){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     sprite.frames = [...sprite.frames,PixelFrame(sprite.width, sprite.height, 0)];
     sprite.currentFrame = sprite.frames.length-1;
     //trigger rerender to remake previews
-    setSpritesheet(prev => ({
-      ...prev,
-      sprites:[...prev.sprites]
-    }));
+    setSprites(prev => (
+      [...prev]
+    ));
   }
 
   function duplicateFrame(frame){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     const newFrame = PixelFrame(sprite.width, sprite.height, 0);
     
     //copy over all the data (can't copy object ref)
@@ -327,54 +457,103 @@ function App() {
     sprite.currentFrame = newFrames.length-1;
     sprite.frames = newFrames;
     //trigger rerender to recreate previews
-    setSpritesheet(prev => ({
-      ...prev,
-      sprites : [...prev.sprites]
-    }));
+    setSprites(prev => (
+      [...prev]
+    ));
   }
 
   function deleteFrame(){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     if(sprite.frames.length>1){
       const newFrames = sprite.frames.toSpliced(sprite.currentFrame,1);
       sprite.frames = newFrames;
       sprite.currentFrame = Math.min(sprite.currentFrame,sprite.frames.length-1);
       //trigger rerender to recreate previews
-      setSpritesheet(prev => ({
-        ...prev,
-        sprites : [...prev.sprites]
-      }));
-      }
+      setSprites(prev => (
+        [...prev]
+      ));
+    }
   }
 
   function reverseFrames(){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     sprite.frames.reverse();
-    setSpritesheet(prev => ({
-      ...prev,
-      sprites : [...prev.sprites]
-    }));
+    setSprites(prev => (
+      [...prev]
+    ));
   }
 
   function handleKeyDown(e){
     if((e.target === document.body)){
-      const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+      const sprite = spritesRef.current[currentSpriteRef.current];
       switch(e.key){
+        case 'Enter':
+          if(settingsRef.current.moveStarted){
+
+          }
+          break;
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+          const newVal = parseInt(e.key)-1;
+          console.log(newVal);
+          if(newVal<sprite.frames.length){
+            sprite.currentFrame = newVal;
+            setSprites(prev => (
+              [...prev]
+            ));
+          }
+          break;
+        case '+':
+        case '=':
+          addNewFrame();
+          break;
+        case '-':
+          deleteFrame();
+          break;
+        case 'p':
+        case 'P':
+          setSettings({...settingsRef.current,currentTool:'pixel'});
+          break;
+        case 's':
+        case 'S':
+          setSettings({...settingsRef.current,currentTool:'select'});
+          break;
+        case 'l':
+        case 'L':
+          setSettings({...settingsRef.current,currentTool:'line'});
+          break;
+        case 'f':
+        case 'F':
+          setSettings({...settingsRef.current,currentTool:'fill'});
+          break;
+        case 'v':
+        case 'V':
+        case 'm':
+        case 'M':
+          setSettings({...settingsRef.current,currentTool:'move'});
+          break;
         case 'ArrowLeft':
-          sprite.nextFrame();
-          setSpritesheet(prev => ({
-            ...prev,
-            sprites : [...prev.sprites]
-          }));
+          sprite.previousFrame();
+          setSprites(prev => (
+            [...prev]
+          ));
           break;
         case 'ArrowRight':
-          sprite.previousFrame();
-          setSpritesheet(prev => ({
-            ...prev,
-            sprites : [...prev.sprites]
-          }));
+          sprite.nextFrame();
+          setSprites(prev => (
+            [...prev]
+          ));
           break;
         case ' ':
+          e.preventDefault();
+          e.stopPropagation();
           settingsRef.current.playing?stop():play();
           break;
         case 'Shift':
@@ -394,20 +573,33 @@ function App() {
   }
 
   function downloadAllFramesAsBMPs(){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
-    for(let frame = 0; frame<sprite.frames.length; frame++){
-      renderFrame(mainCanvasRef.current.getContext('2d'),sprite,frame,{x:0,y:0});
-      mainCanvasRef.current.toBlob((blob) => {
-        const filename = sprite.fileName+'_'+(frame+1)+'.bmp';
+    const tempCanvas = document.createElement('canvas');
+    const fileName = spritesRef.current[0].fileName.split('_')[0];
+    const addFilesToZip = (spriteIndex,frameIndex) => {
+      const sprite = spritesRef.current[spriteIndex];
+      tempCanvas.width = sprite.width;
+      tempCanvas.height = sprite.height;
+      renderFrame(tempCanvas.getContext('2d'),sprite,frameIndex,{x:0,y:0});
+      tempCanvas.toBlob((blob) => {
+        const filename = sprite.fileName+'_'+(frameIndex+1)+'.bmp';
         zip.current.file(filename,blob);
-        if(frame === sprite.frames.length-1)
-          downloadZip();
+        if(frameIndex < sprite.frames.length-1){
+          addFilesToZip(spriteIndex,frameIndex+1);
+        }
+        else if(spriteIndex < (spritesRef.current.length-1)){
+          addFilesToZip(spriteIndex+1,0);
+        }
+        else{
+          downloadZip(fileName);
+          tempCanvas.remove();
+        }
       });
     }
+    addFilesToZip(0,0);
   }
 
   function downloadSingleFrameAsBMP(frame){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+    const sprite = spritesRef.current[currentSpriteRef.current];
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = sprite.width;
     tempCanvas.height = sprite.height;
@@ -422,11 +614,11 @@ function App() {
       tempCanvas.remove();
     });
   }
-  function downloadZip(){
+  function downloadZip(fileName){
     zip.current.generateAsync({type : 'blob' }).then((content) => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(content);
-      a.download = 'sprite.zip';
+      a.download = fileName+'.zip';
       a.click();
     });
   }
@@ -434,12 +626,12 @@ function App() {
   // outputs a link for each frame
   function FrameDownloadLinks(){
     const children = [];
-    const sprite = spritesheet.sprites[spritesheet.currentSprite];
+    const sprite = sprites[currentSprite];
     for(let frame = 0; frame<sprite.frames.length; frame++){
       children.push(<p key = {frame} style = {{color:'blue',textDecoration:'underline',cursor:'pointer'}} onClick = {(e) => downloadSingleFrameAsBMP(frame)}>{sprite.fileName+'_'+(frame+1)+'.bmp'}</p>);
     }
     return(
-      <div style = {{display:'flex',flexDirection:'column'}}>
+      <div style = {{display:'flex',flexDirection:'column',width:'fit-content',border:'1px solid',paddingLeft:'10px',paddingRight:'10px',height:'100px',overflowY:'scroll'}}>
         {children}
       </div>
     )
@@ -481,7 +673,6 @@ function App() {
   }
 
   const [gridDivs,setGridDivs] = useState(()=>createGridDivs(16,16,settings.canvasScale));
-  // const [spritesheetTabs,setSpritesheetTabs] = useState(()=>createSpritesheetTabs(spritesheet));
   function play(){
     //copy the current settings
     backupSettingsRef.current = {
@@ -513,57 +704,102 @@ function App() {
       .filter((file) => file);
     loadImage(files);
   }
-  function loadImage(files){
-    //just one file, draw it to the current canvas
-    if(files.length == 1){
+
+  function loadFiles(fileList,sprite,startFrame){
+    fileList.map((file,index)=>{
       const reader = new FileReader();
       //callback once the file is read
       reader.onload = function () {
-
         //make an image, draw it to canvas
         const img = new Image();
         img.onload = function(){
-          const ctx = mainCanvasRef.current.getContext('2d');
+          if(settingsRef.current.resizeCanvasToImage){
+            const aspectRatio = img.width/img.height;
+            if(img.width>img.height){
+              if(img.width>settingsRef.current.maxCanvasDimension){
+                img.width = settingsRef.current.maxCanvasDimension;
+                img.height = img.width / aspectRatio;
+              }
+            }
+            else if(img.height>img.width){
+              if(img.height>settingsRef.current.maxCanvasDimension){
+                img.height = settingsRef.current.maxCanvasDimension;
+                img.width = img.height * aspectRatio;
+              }
+            }
+            sprite.resize(img.width,img.height);
+            setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
+          }
+          // draw image to main canvas
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = sprite.width;
+          tempCanvas.height = sprite.height;
+          const ctx = tempCanvas.getContext('2d');
           ctx.drawImage(img, 0, 0);
-          setFrameFromCanvas(mainCanvasRef.current,spritesheetRef.current.sprites[spritesheetRef.current.currentSprite].currentFrame);
+
+          //make new frames as needed
+          while(index>=sprite.frames.length){
+            sprite.frames.push(PixelFrame(sprite.width,sprite.height,0));
+          }
+          //copy canvas data
+          sprite.frames[startFrame?(index+startFrame):index].copyCanvas(tempCanvas,settingsRef.current.useAlphaAsBackground);
+          tempCanvas.remove();
+          setSprites(prev => (
+            [...prev]
+          ));
         }
         img.src = reader.result;
       }
-      reader.readAsDataURL(files[0]);
+      reader.readAsDataURL(file);
+    });
+    setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
+  }
+  function loadImage(files){
+    //parsing files by name
+    if(settingsRef.current.parseFilesToSpritesByName){
+      const filesByName = [];
+      let similarFiles = [];
+      let currentSpriteName = files[0].name.split('_')[2];
+      for(let file of files){
+        //if this file is similar to the last one
+        if(file.name.split('_')[2] === currentSpriteName){
+          similarFiles.push(file);
+        }
+        //if this file doesn't match the last one
+        else{
+          //add the files to the filesByName array
+          filesByName.push([...similarFiles]);
+
+          //start a new similarFiles array with this file
+          currentSpriteName = file.name.split('_')[2];
+          similarFiles = [file];
+        }
+      }
+      //push the remaining files!
+      filesByName.push([...similarFiles]);
+      const newSprites = [];
+      for(let fileList of filesByName){
+        const newSprite = Sprite();
+        newSprite.fileName = fileList[0].name.split(/_(?!.*_)/)[0];
+        loadFiles(fileList,newSprite);
+        newSprites.push(newSprite);
+      }
+      setCurrentSprite(0);
+      setSprites(prev => (
+        [...newSprites]
+      ));
+      // setGridDivs(createGridDivs(newSprites[0].width,newSprites[0].height));
       return;
     }
-    //if it's many files, draw each one to a new canvas
-    for(let file = 0; file<files.length; file++){
-      const reader = new FileReader();
-      //callback once the file is read
-      reader.onload = function () {
-
-        //make an image, draw it to canvas
-        const img = new Image();
-        img.onload = function(){
-          const ctx = mainCanvasRef.current.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-          setFrameFromCanvas(mainCanvasRef.current,file);
-        }
-        img.src = reader.result;
-      }
-      reader.readAsDataURL(files[file]);
+    else{
+      //if there's just one file, load it onto the active frame
+      loadFiles(files,spritesRef.current[currentSpriteRef.current],(files.length === 1)?spritesRef.current[currentSpriteRef.current].currentFrame:0);
+      setSprites(prev => (
+        [...prev]
+      ));
     }
   }
 
-  function setFrameFromCanvas(canvas,frame){
-    const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
-    const pixelData = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);
-    const newPixelFrame = PixelFrame(sprite.width,sprite.height,0);
-    for(let px = 0; px<pixelData.data.length/4; px++){
-      newPixelFrame.setPixel(px%canvas.width,Math.trunc(px/canvas.height),pixelData.data[px*4]?1:0);
-    }
-    sprite.frames[frame] = newPixelFrame;
-    setSpritesheet(prev => ({
-      ...prev,
-      sprites:[...prev.sprites]
-    }));
-  }
   function canvasCursor(){
     switch(settings.currentTool){
       case 'pixel':
@@ -574,63 +810,44 @@ function App() {
     }
   }
 
-
   function getTotalImageDataSize(){
-    const sprite = spritesheet.sprites[spritesheet.currentSprite];
+    const sprite = sprites[currentSprite];
     return Math.ceil(sprite.width*sprite.height/8) * sprite.frames.length;
   }
   function resizeCanvasToNewDimensions(){
-    const sprite = spritesheet.sprites[spritesheet.currentSprite];
-    for(let frame of sprite.frames){
-      const targetFrame = PixelFrame(userInputDimensionsRef.current.width, userInputDimensionsRef.current.height, 0);
-      //copy over all the data (can't copy object ref)
-      for(let x = 0; x<targetFrame.width; x++){
-        for(let y = 0; y<targetFrame.height; y++){
-          targetFrame.setPixel(x,y,frame.getPixel(x,y));
-        }
-      }
-      frame = targetFrame;
-    }
-    sprite.width = userInputDimensionsRef.current.width;
-    sprite.height = userInputDimensionsRef.current.height;
-    setSpritesheet(prev => ({
-      ...prev,
-      sprites:[...prev.sprites]
-    }));
+    const sprite = sprites[currentSprite];
+    sprite.resize(userInputDimensionsRef.current.width,userInputDimensionsRef.current.height);
+    setSprites(prev => (
+      [...prev]
+    ));
     setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
   }
 
   function addNewSprite(){
     const newSprite = Sprite();
-    setSpritesheet(prev => ({
-      ...prev,
-      sprites:[...prev.sprites,newSprite],
-      currentSprite: prev.sprites.length
-    }));
+    setSprites(prev => (
+      [...prev,newSprite]
+    ));
+    setCurrentSprite(spritesRef.current.length);
   }
 
   function deleteSprite(index){
-    setSpritesheet(prev => {
-      if (prev.sprites.length <= 1)
+    setSprites(prev => {
+      if (prev.length <= 1)
         return prev;
 
       //remove target sprite
-      const newSprites = prev.sprites.filter((_,i) => i != index);
+      const newSprites = prev.filter((_,i) => i != index);
       //new current sprite
-      const newCurrent = Math.min(prev.currentSprite, newSprites.length - 1);
-      const updated = {
-        ...prev,
-        sprites: newSprites,
-        currentSprite: newCurrent
-      };
-      spritesheetRef.current = updated;
-      return updated;
+      const newCurrent = Math.min(currentSpriteRef.current, newSprites.length - 1);
+      
+      setCurrentSprite(newCurrent);
+      return newSprites;
     });
   }
 
-  function createSpritesheetTabs(sheet){
-    const currentTab = sheet.currentSprite;
-    const sprites = sheet.sprites;
+  // function EditableTextArea
+  function createSpritesheetTabs(sprites,currentTab){
     const tabs = [];
     sprites.map((tab,index) => {
       const tabStyle = {
@@ -641,33 +858,27 @@ function App() {
         alignItems:'center',
       };
       if(index === currentTab){
-        tabStyle.borderBottom = 'none';
+        tabStyle.borderBottom = '1px solid white';
         tabStyle.borderLeft = '1px solid black';
         tabStyle.borderRight = '1px solid black';
         tabStyle.borderTop = '1px solid black';
+        tabStyle.backgroundColor = 'white';
       }
       else{
         tabStyle.borderBottom = '1px solid black';
-        tabStyle.borderLeft = 'none';
-        tabStyle.borderTop = 'none';
-        tabStyle.borderRight = 'none';
+        tabStyle.backgroundColor = 'transparent';
       }
       tabs.push(<div className = "spritesheet_tab" style = {tabStyle} key = {tab.id} 
         onClick = {()=>{
-          setSpritesheet(prev => ({
-            ...prev,
-            currentSprite: index,
-          }));
+          setCurrentSprite(index);
       }}>
-        <textarea key={tab.id+"_textarea"} style = {{color:'black',border:'none',borderRadius:'10px',padding:'none',fieldSizing:'content',height:'1em',resize:'none',alignContent:'center'}} 
-        onChange={(e) => {
-              const sprite = tab;
-              sprite.fileName = e.target.value;
-              setSpritesheet(prev => ({
-                ...prev,
-                sprites:[...prev.sprites]
-              }));
-            }} value = {sprites[index].fileName}/>
+        <TabTitle key={tab.id+"_textarea"} value={tab.fileName} callbackFn={(e) => {
+            const sprite = tab;
+            sprite.fileName = e.target.value;
+            setSprites(prev => (
+              [...prev]
+            ));
+        }}></TabTitle>
         {sprites.length > 1 &&
           <div className = "delete_button" onClick = {()=>{deleteSprite(index)}}>{" x "}</div>
         }
@@ -677,50 +888,67 @@ function App() {
     return(
       <div className = "spritesheet_tabs">
         {tabs}
+        <div className = "button" onClick = {downloadAllFramesAsBMPs}>{"zip spritesheet"}</div>
       </div>
     );
   }
+  const selectionBoxStyle = {
+    border:'1px dashed red',
+    width:selectionBox.getWidth()*settings.canvasScale,
+    height:selectionBox.getHeight()*settings.canvasScale,
+    backgroundColor:'#ff00004c',
+    position:'fixed',
+    marginLeft:(selectionBox.getOffsetLeft()*settings.canvasScale-1)+'px',
+    marginTop:(selectionBox.getOffsetTop()*settings.canvasScale-1)+'px'
+  };
   return (
     <div className = "center_container">
       <div className = "app_container">
-        <img id = "title" src = 'spritemaker/tamo_logo.png'/>
-        <div id = "grid_overlay" style = {{width:spritesheet.sprites[spritesheet.currentSprite].width*settings.canvasScale+'px',display:'block',position:'relative',gridArea:'canvas',pointerEvents:'none'}}>
+        <img id = "title" src = 'spritemaker/title.gif'/>
+        <div id = "grid_overlay" style = {{marginLeft:settings.canvasScale*4+'px',width:sprites[currentSprite].width*settings.canvasScale+'px',display:'block',position:'fixed',marginTop:'100px',gridArea:'canvas',pointerEvents:'none'}}>
           {settings.overlayGrid && gridDivs}
-          <canvas id = "pixel_canvas" style = {{cursor:canvasCursor(),imageRendering:'pixelated',width:spritesheet.sprites[spritesheet.currentSprite].width*settings.canvasScale +'px',height:spritesheet.sprites[spritesheet.currentSprite].height*settings.canvasScale +'px'}} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave = {handleMouseLeave}></canvas>
+          <img id = "canvas_border" src = 'spritemaker/border_transparent.png' style = {{position:'fixed',width:(sprites[currentSprite].width*2)*settings.canvasScale+'px',height:(sprites[currentSprite].height*2)*settings.canvasScale+'px',marginLeft:-((sprites[currentSprite].width)*settings.canvasScale)/2+'px',marginTop:-((sprites[currentSprite].height)*settings.canvasScale)*0.45+'px'}}></img>
+          {(selectionBox.active || selectionBox.hasStarted) &&
+            <div id = "selection_box" style = {selectionBoxStyle}></div>
+          }
+          <canvas id = "pixel_canvas" style = {{cursor:canvasCursor(),imageRendering:'pixelated',width:sprites[currentSprite].width*settings.canvasScale +'px',height:sprites[currentSprite].height*settings.canvasScale +'px'}} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave = {handleMouseLeave}></canvas>
         </div>
-        {/* {spritesheetTabs} */}
-        {createSpritesheetTabs(spritesheet)}
+        {/* spritesheet tabs */}
+        {createSpritesheetTabs(sprites,currentSprite)}
         <div className = "ui_container">
-          <div id = "preview_canvases" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',maxHeight:'150px',overflowY:'scroll'}}>
-            {spritesheet.sprites[spritesheet.currentSprite].frames.map((frame,index) => {
-              return <canvas key = {index} className = "preview_canvas" style = {{borderColor:(index == spritesheet.sprites[spritesheet.currentSprite].currentFrame)?'red':'inherit',cursor:'pointer',imageRendering:'pixelated',width:spritesheet.sprites[spritesheet.currentSprite].width*2+'px',height:spritesheet.sprites[spritesheet.currentSprite].height*2+'px'}} 
+        <img id = "gif_1" className = "title_gif" src = 'spritemaker/tamo_idle.gif' style = {{left:'0px',top:'-70px'}} ></img>
+        <img id = "gif_2" className = "title_gif" src = 'spritemaker/porcini_happy.gif' style = {{left:'180px',top:'-60px'}} ></img>
+        <img id = "gif_3" className = "title_gif" src = 'spritemaker/bug_angry.gif' style = {{left:'-70px',bottom:'0px'}} ></img>
+        <img id = "gif_4" className = "title_gif" src = 'spritemaker/boto_sad.gif' style = {{left:'220px',bottom:'0'}} ></img>
+          <div id = "preview_canvases" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',height:'fit-content',overflowY:'scroll'}}>
+            {sprites[currentSprite].frames.map((frame,index) => {
+              return <canvas key = {index} className = "preview_canvas" style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'red':'inherit',cursor:'pointer',imageRendering:'pixelated',width:sprites[currentSprite].width*2+'px',height:sprites[currentSprite].height*2+'px'}} 
               ref = 
               {(el)=>{
                 if(el){
                   const ctx = el.getContext('2d');
-                  el.width = spritesheet.sprites[spritesheet.currentSprite].width;
-                  el.height = spritesheet.sprites[spritesheet.currentSprite].height;
-                  renderFrame(ctx,spritesheet.sprites[spritesheet.currentSprite],index,{x:0,y:0});
+                  el.width = sprites[currentSprite].width;
+                  el.height = sprites[currentSprite].height;
+                  renderFrame(ctx,sprites[currentSprite],index,{x:0,y:0});
                 }
               }}
               onClick = {(e)=>{
-                const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+                const sprite = spritesRef.current[currentSpriteRef.current];
                 sprite.currentFrame = index;
                 // force React to rerender
-                setSpritesheet(prev => ({
-                  ...prev,
-                  sprites: [...prev.sprites]
-                }));
+                setSprites(prev => (
+                  [...prev]
+                ));
               }
               }></canvas>;
             })}
           </div>
-          <div>frame -- {spritesheet.sprites[spritesheet.currentSprite].currentFrame+1} / {spritesheet.sprites[spritesheet.currentSprite].frames.length}</div>
+          <div>frame -- {sprites[currentSprite].currentFrame+1} / {sprites[currentSprite].frames.length}</div>
           {/* frame editing */}
           <div id = "button_holder" style = {{display:'flex'}}>
             <div className = "button" onClick = {addNewFrame}>{" + "}</div>
             <div className = "button" onClick = {deleteFrame}>{" - "}</div>
-            <div className = "button" onClick = {()=>{duplicateFrame(spritesheetRef.current.sprites[spritesheetRef.current.currentSprite].currentFrame)}}>{" dupe "}</div>
+            <div className = "button" onClick = {()=>{duplicateFrame(spritesRef.current[currentSpriteRef.current].currentFrame)}}>{" dupe "}</div>
             <div className = "button" onClick = {reverseFrames}>{"reverse"}</div>
             <div className = "button" onClick = {settings.playing?()=>{
               stop();
@@ -729,34 +957,48 @@ function App() {
             }}>{settings.playing?"stop":"play"}</div>
           </div>
           <div style = {{display:'flex',alignItems:'center'}}>
-            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.width != spritesheet.sprites[spritesheet.currentSprite].width)?'blue':'inherit',color:(userInputDimensions.width != spritesheet.sprites[spritesheet.currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max="32" onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={spritesheet.sprites[spritesheet.currentSprite].width}/>
+            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'inherit',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width}/>
             <p style = {{fontStyle:'italic',fontFamily:'times'}}>x</p>
-            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.height != spritesheet.sprites[spritesheet.currentSprite].height)?'blue':'inherit',color:(userInputDimensions.height != spritesheet.sprites[spritesheet.currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max="16" onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={spritesheet.sprites[spritesheet.currentSprite].height}/>
-            {(userInputDimensions.height != spritesheet.sprites[spritesheet.currentSprite].height || userInputDimensions.width != spritesheet.sprites[spritesheet.currentSprite].width) &&
+            <input inputMode = "numeric" type="number" style = {{border:'1px solid',borderRadius:'10px',padding:'4px',margin:'2px',backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'inherit',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height}/>
+            {(userInputDimensions.height != sprites[currentSprite].height || userInputDimensions.width != sprites[currentSprite].width) &&
               <div className = "button" onClick = {resizeCanvasToNewDimensions}>resize</div>
             }
             <input type="range" style = {{width:'100px'}}className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" onInput={(e) => {
                 const newScale = parseFloat(e.target.value);
                 setSettings({...settingsRef.current,canvasScale:newScale});
-                const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+                const sprite = spritesRef.current[currentSpriteRef.current];
                 setGridDivs(createGridDivs(sprite.width,sprite.height,newScale));
               }} />
             <p>{settings.canvasScale+'x'}</p>
           </div>
+          {(userInputDimensions.width > 64 || userInputDimensions.height > 32) &&
+            <p style = {{fontStyle:'italic',color:'red'}}>tamo's screen only supports 64x32 sprites</p>
+          }
           {/* pixel manipulation tools */}
           <div>tools -- {settings.currentTool} {currentMouseCoords &&'['+currentMouseCoords.x+','+currentMouseCoords.y+']'}</div>
-          <div id = "button_holder" style = {{display:'flex'}}>
+          <div className = "button_holder">
             <div className = "button" style = {{backgroundColor:settings.currentTool == 'pixel'?'blue':'inherit',color:settings.currentTool == 'pixel'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'pixel'})}}>{" pixel "}</div>
             <div className = "button" style = {{backgroundColor:settings.currentTool == 'line'?'blue':'inherit',color:settings.currentTool == 'line'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'line'})}}>{" line "}</div>
             <div className = "button" style = {{backgroundColor:settings.currentTool == 'fill'?'blue':'inherit',color:settings.currentTool == 'fill'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'fill'})}}>{" fill "}</div>
+          </div>
+          <div className = "button_holder">
+            <div className = "button" style = {{backgroundColor:settings.currentTool == 'select'?'blue':'inherit',color:settings.currentTool == 'select'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'select'})}}>{" select "}</div>
             <div className = "button" style = {{backgroundColor:settings.currentTool == 'move'?'blue':'inherit',color:settings.currentTool == 'move'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}>{" move "}</div>
           </div>
-          <div id = "button_holder" style = {{display:'flex'}}>
-            <div className = "button" style = {{backgroundColor:settings.currentColor == 1?'inherit':'black',color:settings.currentColor == 1?'inherit':'white'}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
+          <div className = "button_holder">
+            <div className = "button" style = {{backgroundColor:settings.currentColor == 1?settings.foregroundColor:settings.backgroundColor}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
             <div className = "button" onClick = {clearFrame}>{"clear"}</div>
-            <div className = "button" onClick = {invertFrame}>{" invert "}</div>
+            <div className = "button" onClick = {invertFrame}>{" ^-1 "}</div>
+            <div className = "button" style = {{backgroundColor:settings.palletteOpen?'blue':'inherit',color:settings.palletteOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,palletteOpen:!settingsRef.current.palletteOpen})}>{" color "}</div>
           </div>
-          <div style = {{display:'flex'}}>
+          {settings.palletteOpen &&
+            <div style = {{display:'flex',padding:'10px',marginTop:'10px',borderRadius:'30px',backgroundColor:'black',width:'fit-content'}}>
+              <ColorPicker label = "background" callback = {(val)=>{setSettings({...settingsRef.current,backgroundColor:val})}} defaultValue = {settings.backgroundColor}></ColorPicker>
+              <ColorPicker label = "foreground" callback = {(val)=>{setSettings({...settingsRef.current,foregroundColor:val})}} defaultValue = {settings.foregroundColor}></ColorPicker>
+              <ColorPicker label = "ghosting" callback = {(val)=>{setSettings({...settingsRef.current,overlayColor:val})}} defaultValue = {settings.overlayColor}></ColorPicker>
+            </div>
+          }
+          <div className='button_holder'>
             <input type="range" className = "control_slider" id="frame_speed_slider" name="ms" min="100" max="1000" step="100" onInput={(e) => {window.clearTimeout(timeoutIDRef.current);setSettings({...settingsRef.current,frameSpeed:parseInt(e.target.value)});if(settingsRef.current.playing){
               timeoutIDRef.current = window.setTimeout(playNextFrame,parseInt(e.target.value));
             }}} />
@@ -767,22 +1009,24 @@ function App() {
           <label id="drop-zone">
             Drop images here, or click to upload.
             <input type="file" id="file-input" multiple accept="image/*" style = {{display:'none'}} onInput={(e) => loadImage(e.target.files)} />
-          </label>          <p style = {{padding:'none',marginBottom:'0px',fontFamily:'chopin',fontWeight:'normal',fontSize:'20px'}}>Name Prefix:</p>
+          </label>
+          <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,resizeCanvasToImage:!settingsRef.current.resizeCanvasToImage});}}>{settings.resizeCanvasToImage?(<>resize to uploaded image: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"resize to uploaded image: OFF"}</div>
+          <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,useAlphaAsBackground:!settingsRef.current.useAlphaAsBackground});}}>{settings.useAlphaAsBackground?(<>use transparency to determine background: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"use transparency to determine background: OFF"}</div>
+          <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,parseFilesToSpritesByName:!settingsRef.current.parseFilesToSpritesByName});}}>{settings.parseFilesToSpritesByName?(<>autogen sprites from filenames: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"autogen sprites from filenames: OFF"}</div>
+          <p style = {{padding:'none',marginBottom:'0px',fontFamily:'chopin',fontWeight:'normal',fontSize:'20px'}}>Name Prefix:</p>
           <textarea style = {{fieldSizing:'content',height:'1em',borderRadius:'10px',backgroundColor:'blue',color:'white',padding:'4px',resize:'none',alignContent:'center'}} onInput={(e) => 
             {
               e.preventDefault();
-              const sprite = spritesheetRef.current.sprites[spritesheetRef.current.currentSprite];
+              const sprite = spritesRef.current[currentSpriteRef.current];
               sprite.fileName = e.target.value;
-              setSpritesheet(prev => ({
-                ...prev,
-                sprites:[...prev.sprites]
-              }));
-            }} value = {spritesheet.sprites[spritesheet.currentSprite].fileName}/>
-          <div id = "file_download_container" style = {{width:'fit-content',border:'1px solid',paddingLeft:'10px',paddingRight:'10px',maxHeight:'150px',overflowY:'scroll'}}>
+              setSprites(prev => (
+                [...prev]
+              ));
+            }} value = {sprites[currentSprite].fileName}/>
+          {/* <div id = "file_download_container" style = {{width:'fit-content',border:'1px solid',paddingLeft:'10px',paddingRight:'10px',height:'100px',overflowY:'scroll'}}> */}
             <FrameDownloadLinks></FrameDownloadLinks>
-          </div>
+          {/* </div> */}
           <div style = {{dispaly:'flex'}}>
-            <div className = "button" onClick = {downloadAllFramesAsBMPs}>{"download zip"}</div>
             <p>{'('+getTotalImageDataSize()+' bytes of pixel data)'}</p>
           </div>
         </div>
