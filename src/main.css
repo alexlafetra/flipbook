@@ -1,6 +1,6 @@
 @font-face {
     font-family: chopin;
-    src: url('flipbook/ChopinScript.ttf');
+    src: url('/ChopinScript.ttf');
 }
 
 .center_container{
