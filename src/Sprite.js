@@ -138,7 +138,7 @@ export const PixelFrame = (w,h,fill) => {
         },
         invert : function(){
             for(let i = 0; i<this.data.length; i++){
-            this.data[i] = (this.data[i] == 1) ? 0 : 1;
+                this.data[i] = (this.data[i] == 1) ? 0 : 1;
             }
             return this;
         },
@@ -171,6 +171,21 @@ export const PixelFrame = (w,h,fill) => {
                 }
                 this.setPixel(px%this.width,Math.trunc(px/this.width),val?1:0);
             }
+        },
+        mirror : function(direction){
+            let backupData = [];
+            for(let x = 0; x<this.width; x++){
+                for(let y = 0; y<this.height; y++){
+                    if(direction == 'vertical'){
+                        backupData[x+this.width*y] = this.data[(x)+this.width*(this.height-y-1)];
+                    }
+                    else if(direction == 'horizontal'){
+                        backupData[x+this.width*y] = this.data[(this.width-x-1)+this.width*y];
+                    }
+                }
+            }
+            [this.data,backupData] = [backupData,this.data];
         }
+
     }
 }

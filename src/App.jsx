@@ -33,7 +33,7 @@ function App() {
     parseFilesToSpritesByName:false,
     useAlphaAsBackground:false,
     resizeCanvasToImage:true,
-    maxCanvasDimension:128,
+    maxCanvasDimension:200,
     palletteOpen:false,
     settingsBoxOpen:false,
     foregroundColor:'#ffffffff',
@@ -53,7 +53,62 @@ function App() {
   //use this to clear the playNextFrame() timeout
   const timeoutIDRef = useRef(null);
   const [currentMouseCoords,setCurrentMouseCoords] = useState({x:0,y:0});
+  const undoBuffer = useRef([]);
+  const redoBuffer = useRef([]);
 
+  function pushUndoState(){
+    //if the buffer gets long enough, start removing early entries
+    if(undoBuffer.current.length > 200){
+      undoBuffer.current.shift();
+    }
+    undoBuffer.current.push({
+      spritesJSON:JSON.stringify(spritesRef.current),
+      currentSprite:currentSpriteRef.current
+    });
+    //adding to the undo buffer resets the redo buffer
+    redoBuffer.current = [];
+  }
+
+  function restoreState(state){
+    const restoredSprites = JSON.parse(state.spritesJSON);
+    //rebuild sprites object from json
+    const hydrated = restoredSprites.map(raw => {
+      const restoredSprite = Sprite();
+      restoredSprite.width = raw.width;
+      restoredSprite.height = raw.height;
+      restoredSprite.fileName = raw.fileName;
+      restoredSprite.currentFrame = raw.currentFrame;
+      restoredSprite.frames = raw.frames.map(frame => {
+        const newFrame = PixelFrame(frame.width,frame.height,frame.data);
+        return newFrame;
+      });
+      return restoredSprite;
+    }) 
+    setSprites([...hydrated]);
+    setCurrentSprite(state.currentSprite);
+  }
+
+  function undo(){
+    if(undoBuffer.current.length === 0)
+      return;
+    const previousState = undoBuffer.current.pop();
+    redoBuffer.current.push({
+      spritesJSON:JSON.stringify(spritesRef.current),
+      currentSprite:currentSpriteRef.current
+    });
+    restoreState(previousState);
+  }
+
+  function redo(){
+    if(redoBuffer.current.length === 0)
+      return;
+    const nextState = redoBuffer.current.pop();
+    undoBuffer.current.push({
+      spritesJSON:JSON.stringify(spritesRef.current),
+      currentSprite:currentSpriteRef.current
+    });
+    restoreState(nextState);
+  }
 
   const [selectionBox,setSelectionBox] = useState(SelectionBox());
   const selectionBoxRef = useRef(selectionBox);
@@ -225,6 +280,7 @@ function App() {
     const sprite = spritesRef.current[currentSpriteRef.current];
     switch(settingsRef.current.currentTool){
       case 'pixel':
+        pushUndoState();
         const newFrames = sprite.frames;
         newFrames[sprite.currentFrame].setPixel(coords.x,coords.y,settingsRef.current.currentColor);
         setSprites(prev => (
@@ -232,6 +288,7 @@ function App() {
         ));
         break;
       case 'fill':{
+        pushUndoState();
         const newFrames = sprite.frames;
         newFrames[sprite.currentFrame].fill(coords.x,coords.y,settingsRef.current.currentColor);
         setSprites(prev => (
@@ -242,6 +299,7 @@ function App() {
       case 'line':
         //if you haven't started drawing a line yet
         if(!settingsRef.current.lineStarted){
+          pushUndoState();
           startClickCoords.current = coords;
           //make a backup of the line
           pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
@@ -252,6 +310,7 @@ function App() {
         }
       case 'move':
         if(!settingsRef.current.moveStarted){
+          pushUndoState();
           //store the selected area
           if(selectionBox.active){
             selectedArea.current = PixelFrame(selectionBox.getWidth(),selectionBox.getHeight(),0);
@@ -462,6 +521,7 @@ function App() {
   }
 
   function clearFrame(){
+    pushUndoState();
     const sprite = spritesRef.current[currentSpriteRef.current];
     sprite.frames[sprite.currentFrame] = PixelFrame(sprite.width, sprite.height, 0);
     setSprites(prev => (
@@ -470,14 +530,32 @@ function App() {
   }
 
   function invertFrame(){
+    pushUndoState();
     const sprite = spritesRef.current[currentSpriteRef.current];
     sprite.frames[sprite.currentFrame].invert();
     setSprites(prev => (
       [...prev]
     ));
   }
+  function mirrorHorizontally(){
+    pushUndoState();
+    const sprite = spritesRef.current[currentSpriteRef.current];
+    sprite.frames[sprite.currentFrame].mirror('horizontal');
+    setSprites(prev => (
+      [...prev]
+    ));
+  }
+  function mirrorVertically(){
+    pushUndoState();
+    const sprite = spritesRef.current[currentSpriteRef.current];
+    sprite.frames[sprite.currentFrame].mirror('vertical');
+    setSprites(prev => (
+      [...prev]
+    ));
+  }
 
   function addNewFrame(){
+    pushUndoState();
     const sprite = spritesRef.current[currentSpriteRef.current];
     sprite.frames = [...sprite.frames,PixelFrame(sprite.width, sprite.height, 0)];
     sprite.currentFrame = sprite.frames.length-1;
@@ -488,6 +566,7 @@ function App() {
   }
 
   function duplicateFrame(frame){
+    pushUndoState();
     const sprite = spritesRef.current[currentSpriteRef.current];
     const newFrame = PixelFrame(sprite.width, sprite.height, 0);
     
@@ -505,10 +584,14 @@ function App() {
     ));
   }
 
-  function deleteFrame(){
+  function deleteFrame(frameIndex){
+    pushUndoState();
     const sprite = spritesRef.current[currentSpriteRef.current];
+    //if no frame was specified, delete the currently viewed frame
+    if(frameIndex === undefined)
+      frameIndex = sprite.currentFrame;
     if(sprite.frames.length>1){
-      const newFrames = sprite.frames.toSpliced(sprite.currentFrame,1);
+      const newFrames = sprite.frames.toSpliced(frameIndex,1);
       sprite.frames = newFrames;
       sprite.currentFrame = Math.min(sprite.currentFrame,sprite.frames.length-1);
       //trigger rerender to recreate previews
@@ -519,6 +602,7 @@ function App() {
   }
 
   function reverseFrames(){
+    pushUndoState();
     const sprite = spritesRef.current[currentSpriteRef.current];
     sprite.frames.reverse();
     setSprites(prev => (
@@ -530,6 +614,17 @@ function App() {
     if((e.target === document.body)){
       const sprite = spritesRef.current[currentSpriteRef.current];
       switch(e.key){
+        case 'Z':
+        case 'z':
+          if(e.metaKey || e.ctrlKey){
+            if(e.shiftKey){
+              redo();
+            }
+            else{
+              undo();
+            }
+          }
+          break;
         case '1':
         case '2':
         case '3':
@@ -760,7 +855,7 @@ function App() {
                 img.height = img.width / aspectRatio;
               }
             }
-            else if(img.height>img.width){
+            else if(img.height>=img.width){
               if(img.height>settingsRef.current.maxCanvasDimension){
                 img.height = settingsRef.current.maxCanvasDimension;
                 img.width = img.height * aspectRatio;
@@ -866,6 +961,7 @@ function App() {
   }
 
   function addNewSprite(){
+    pushUndoState();
     const newSprite = Sprite();
     setSprites(prev => (
       [...prev,newSprite]
@@ -874,6 +970,7 @@ function App() {
   }
 
   function deleteSprite(index){
+    pushUndoState();
     setSprites(prev => {
       if (prev.length <= 1)
         return prev;
@@ -929,7 +1026,6 @@ function App() {
     return(
       <div className = "spritesheet_tabs_container">
         {tabs}
-        <div className = "button" onClick = {downloadAllFramesAsBMPs}>{"dwnld zip"}</div>
       </div>
     );
   }
@@ -948,32 +1044,38 @@ function App() {
         scaledHeight = maxPreviewDim;
         scaledWidth = maxPreviewDim/aspectRatio;
       }
-      else if((scaledHeight < scaledWidth) && scaledWidth>maxPreviewDim){
+      else if((scaledHeight <= scaledWidth) && scaledWidth>maxPreviewDim){
         scaledWidth = maxPreviewDim;
         scaledHeight = maxPreviewDim*aspectRatio;
       }
 
-      return <canvas key = {index} className = "preview_canvas" 
-        style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'red':'inherit',cursor:'pointer',imageRendering:'pixelated',width:scaledWidth+'px',height:scaledHeight+'px'}} 
-        ref = 
-        {(el)=>{
-          if(el){
-            const ctx = el.getContext('2d');
-            el.width = sprites[currentSprite].width;
-            el.height = sprites[currentSprite].height;
-            renderFrame(ctx,sprites[currentSprite],index,{x:0,y:0});
+      return(
+      <div className = "preview_canvas_holder" key = {index+'_canvas_holder'} style = {{position:'relative'}}>
+        <canvas key = {index+'_canvas'} className = "preview_canvas" 
+          style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'#8cc31eff':'inherit',cursor:'pointer',imageRendering:'pixelated',width:scaledWidth+'px',height:scaledHeight+'px'}} 
+          ref = 
+          {(el)=>{
+            if(el){
+              const ctx = el.getContext('2d');
+              el.width = sprites[currentSprite].width;
+              el.height = sprites[currentSprite].height;
+              renderFrame(ctx,sprites[currentSprite],index,{x:0,y:0});
+            }
+          }}
+          onClick = {(e)=>{
+            const sprite = spritesRef.current[currentSpriteRef.current];
+            sprite.currentFrame = index;
+            // force React to rerender
+            setSprites(prev => (
+              [...prev]
+            ));
           }
-        }}
-        onClick = {(e)=>{
-          const sprite = spritesRef.current[currentSpriteRef.current];
-          sprite.currentFrame = index;
-          // force React to rerender
-          setSprites(prev => (
-            [...prev]
-          ));
-        }
         }>
-        </canvas>;
+        </canvas>
+        {sprites[currentSprite].frames.length > 1 &&
+          <div key = {index+'_delete_button'} className = "button" style = {{whiteSpace:'pre',justifyContent:'center',alignItems:'center',display:'flex',position:'absolute',top:'-3px',right:'-3px',width:'3px',height:'3px',borderRadius:'3px'}}onClick = {()=>{deleteFrame(index)}}>{'x'}</div>
+        }
+        </div>);
     });
   }
 
@@ -1023,8 +1125,8 @@ function App() {
           <div id = "canvas_container" style = {canvasContainerStyle}>
             <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}  onMouseLeave = {handleMouseLeave} onTouchEnd={handleMouseUp} onTouchCancel={handleMouseUp} onTouchMove={handleMouseMove}></canvas>
             {settings.overlayGrid && gridDivs}
-            {(sprites[currentSprite].width <= 32) && (sprites[currentSprite].height <= 32) &&
-            <img id = "canvas_border" className = "transparent_img_drop_shadow" src = 'border_transparent.png' style = {canvasBorderImageStyle}></img>
+            {(sprites[currentSprite].width <= 32) && (sprites[currentSprite].height <= 32) && (settings.canvasScale*sprites[currentSprite].width<=256) &&
+            <img id = "canvas_border" className = "transparent_img_drop_shadow" src = 'border_animated.gif' style = {canvasBorderImageStyle}></img>
             }
             {(selectionBox.active || selectionBox.hasStarted) &&
               <div id = "selection_box" style = {selectionBoxStyle}></div>
@@ -1038,54 +1140,59 @@ function App() {
         {/* ui */}
         <div className = "ui_container">
           {/* preview canvases */}
-          <div id = "preview_gallery_holder" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',height:'fit-content',overflowY:'scroll'}}>
+          <div id = "preview_gallery_holder" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',height:'fit-content',overflowY:'scroll',paddingTop:'5px'}}>
             {createPreviewCanvases()}
+            <div className = "button" onClick = {addNewFrame}>{" + "}</div>
           </div>
           <div>frame -- {sprites[currentSprite].currentFrame+1} / {sprites[currentSprite].frames.length}</div>
           
           {/* frame editing */}
           <div className = "button_holder">
-            <div className = "button" onClick = {addNewFrame}>{" + "}</div>
-            <div className = "button" onClick = {deleteFrame}>{" - "}</div>
-            <div className = "button" onClick = {()=>{duplicateFrame(spritesRef.current[currentSpriteRef.current].currentFrame)}}>{" dupe "}</div>
-            <div className = "button" onClick = {reverseFrames}>{"reverse"}</div>
-            <div className = "button" onClick = {settings.playing?()=>{stop();}:()=>{play();}}>{settings.playing?"stop":"play"}</div>
+            <div className = "button" onClick = {settings.playing?()=>{stop();}:()=>{play();}}>{settings.playing?" ⏸︎ ":" ▶ "}</div>
+            <div className = "button" onClick = {()=>{duplicateFrame(spritesRef.current[currentSpriteRef.current].currentFrame)}}>{" duplicate "}</div>
+            <div className = "button" onClick = {reverseFrames}>{" reverse order "}</div>
           </div>
           <div style = {{display:'flex',alignItems:'center'}}>
-            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'inherit',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width}/>
+            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'white',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width}/>
             <p style = {{fontStyle:'italic',fontFamily:'times'}}>x</p>
-            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'inherit',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height}/>
+            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'white',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height}/>
             {(userInputDimensions.height != sprites[currentSprite].height || userInputDimensions.width != sprites[currentSprite].width) &&
               <div className = "button" onClick = {resizeCanvasToNewDimensions}>resize</div>
             }
-            <input type="range" style = {{width:'100px'}}className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="12" step="1" value = {settings.canvasScale} onInput={(e) => {
-                const newScale = parseFloat(e.target.value);
-
-                setSettings({...settingsRef.current,canvasScale:newScale});
-                setGridDivs(createGridDivs(spritesRef.current[currentSpriteRef.current].width,spritesRef.current[currentSpriteRef.current].height,newScale));
-              }} />
-            <p>{settings.canvasScale+'x'}</p>
+            <div className = "button_holder" style = {{flexDirection:'column'}}>
+              <div style = {{fontStyle:'italic',margin:'auto',marginBottom:'-10px',}}>page zoom</div>
+              <div className = "button_holder" style = {{}}>
+                <input type="range" style = {{width:'100px'}}className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" value = {settings.canvasScale} onInput={(e) => {
+                    const newScale = parseFloat(e.target.value);
+                    setSettings({...settingsRef.current,canvasScale:newScale});
+                    setGridDivs(createGridDivs(spritesRef.current[currentSpriteRef.current].width,spritesRef.current[currentSpriteRef.current].height,newScale));
+                  }} />
+                <p>{settings.canvasScale+'x'}</p>
+              </div>
+              </div>
           </div>
           {(userInputDimensions.width > 64 || userInputDimensions.height > 32) &&
-            <p style = {{fontStyle:'italic',color:'red'}}>tamo's screen only supports 64x32 sprites</p>
+            <p style = {{fontStyle:'italic',color:'red'}}>fyi: tamo's screen only supports 64x32 sprites</p>
           }
 
           {/* pixel/canvases manipulation tools */}
           <div>tools -- {settings.currentTool} {currentMouseCoords &&'['+currentMouseCoords.x+','+currentMouseCoords.y+']'}</div>
           <div className = "button_holder">
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'pixel'?'blue':'inherit',color:settings.currentTool == 'pixel'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'pixel'})}}>{" pixel "}</div>
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'line'?'blue':'inherit',color:settings.currentTool == 'line'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'line'})}}>{" line "}</div>
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'fill'?'blue':'inherit',color:settings.currentTool == 'fill'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'fill'})}}>{" fill "}</div>
-          </div>
-          <div className = "button_holder">
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'select'?'blue':'inherit',color:settings.currentTool == 'select'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'select'})}}>{" select "}</div>
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'move'?'blue':'inherit',color:settings.currentTool == 'move'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}>{" move "}</div>
-          </div>
-          <div className = "button_holder">
             <div className = "button" style = {{border:'1px solid black',backgroundColor:settings.currentColor == 1?settings.foregroundColor:settings.backgroundColor}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
+            <div className = "button" style = {{backgroundColor:settings.currentTool == 'pixel'?'blue':'white',color:settings.currentTool == 'pixel'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'pixel'})}}>{" pixel "}</div>
+            <div className = "button" style = {{backgroundColor:settings.currentTool == 'line'?'blue':'white',color:settings.currentTool == 'line'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'line'})}}>{" line "}</div>
+            <div className = "button" style = {{backgroundColor:settings.currentTool == 'fill'?'blue':'white',color:settings.currentTool == 'fill'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'fill'})}}>{" fill "}</div>
+          </div>
+          <div className = "button_holder">
+            <div className = "button" style = {{backgroundColor:settings.currentTool == 'select'?'blue':'white',color:settings.currentTool == 'select'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'select'})}}>{" select "}</div>
+            <div className = "button" style = {{backgroundColor:settings.currentTool == 'move'?'blue':'white',color:settings.currentTool == 'move'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}>{" move "}</div>
             <div className = "button" onClick = {clearFrame}>{"clear"}</div>
-            <div className = "button" onClick = {invertFrame}>{" ^-1 "}</div>
-            <div className = "button" style = {{backgroundColor:settings.palletteOpen?'blue':'inherit',color:settings.palletteOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,palletteOpen:!settingsRef.current.palletteOpen})}>{" color "}</div>
+         </div>
+          <div className = "button_holder">
+            <div className = "button" onClick = {invertFrame}>{" invert "}</div>
+            <div className = "button" onClick = {mirrorHorizontally}>{" ⇠⇢ "}</div>
+            <div className = "button" onClick = {mirrorVertically}>{" ⇡⇣ "}</div>
+            <div className = "button" style = {{backgroundColor:settings.palletteOpen?'blue':'white',color:settings.palletteOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,palletteOpen:!settingsRef.current.palletteOpen})}>{" color "}</div>
           </div>
           {settings.palletteOpen &&
             <div style = {{display:'flex',padding:'10px',marginTop:'10px',borderRadius:'30px',backgroundColor:'black',width:'fit-content'}}>
@@ -1109,8 +1216,9 @@ function App() {
           </label>
 
           {/* settings */}
-          <div className = 'button_holder' style = {{width:'200px',padding:'0px 1em',alignItems:'center',flexDirection:'column'}}>
-            <div className = "button" style = {{backgroundColor:settings.settingsBoxOpen?'blue':'inherit',color:settings.settingsBoxOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,settingsBoxOpen:!settingsRef.current.settingsBoxOpen})}>{" settings "}</div>
+          <div className = 'button_holder'>
+            <div className = "button" onClick = {downloadAllFramesAsBMPs}>{"download zip"}</div>
+            <div className = "button" style = {{backgroundColor:settings.settingsBoxOpen?'blue':'white',color:settings.settingsBoxOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,settingsBoxOpen:!settingsRef.current.settingsBoxOpen})}>{" settings "}</div>
           </div>
           {settings.settingsBoxOpen &&
           <div style = {{borderLeft:'1px solid black',width:'fit-content',padding:'10px'}}>
