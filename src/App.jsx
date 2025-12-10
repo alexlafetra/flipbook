@@ -221,7 +221,6 @@ function App() {
   }
   function handleMouseDown(e){
     const coords = getClickCoords(e);
-    console.log(e);
     startClickCoords.current = coords;
     const sprite = spritesRef.current[currentSpriteRef.current];
     switch(settingsRef.current.currentTool){
@@ -930,14 +929,32 @@ function App() {
     return(
       <div className = "spritesheet_tabs_container">
         {tabs}
-        <div className = "button" onClick = {downloadAllFramesAsBMPs}>{"zip spritesheet"}</div>
+        <div className = "button" onClick = {downloadAllFramesAsBMPs}>{"dwnld zip"}</div>
       </div>
     );
   }
 
   function createPreviewCanvases(){
     return sprites[currentSprite].frames.map((frame,index) => {
-      return <canvas key = {index} className = "preview_canvas" style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'red':'inherit',cursor:'pointer',imageRendering:'pixelated',width:sprites[currentSprite].width*2+'px',height:sprites[currentSprite].height*2+'px'}} 
+
+      //doing some bounds checking on the preview dimensions so they don't get huge
+      const aspectRatio = sprites[currentSprite].height/sprites[currentSprite].width;
+      let scaledWidth = sprites[currentSprite].width*2;
+      let scaledHeight = sprites[currentSprite].height*2;
+
+      const maxPreviewDim = 64;
+
+      if((scaledHeight > scaledWidth) && scaledHeight>maxPreviewDim){
+        scaledHeight = maxPreviewDim;
+        scaledWidth = maxPreviewDim/aspectRatio;
+      }
+      else if((scaledHeight < scaledWidth) && scaledWidth>maxPreviewDim){
+        scaledWidth = maxPreviewDim;
+        scaledHeight = maxPreviewDim*aspectRatio;
+      }
+
+      return <canvas key = {index} className = "preview_canvas" 
+        style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'red':'inherit',cursor:'pointer',imageRendering:'pixelated',width:scaledWidth+'px',height:scaledHeight+'px'}} 
         ref = 
         {(el)=>{
           if(el){
@@ -981,10 +998,10 @@ function App() {
   const canvasContainerStyle = {
     display:'block',
     pointerEvents:'none',
-    marginLeft:((sprites[currentSprite].width)*settings.canvasScale)*0.2+'px',
-    marginRight:((sprites[currentSprite].width)*settings.canvasScale)*0.2+'px',
+    marginLeft:(sprites[currentSprite].width)/2+'px',
+    marginRight:(sprites[currentSprite].width)/2+'px',
     marginTop:0,
-    marginBottom:((sprites[currentSprite].height)*settings.canvasScale)*0.2+'px',
+    marginBottom:(sprites[currentSprite].height)/2+'px',
     width:sprites[currentSprite].width*settings.canvasScale +'px',
     height:sprites[currentSprite].height*settings.canvasScale +'px',
     boxShadow:(typeof window.safari === "undefined")?'5px 5px 5px #46788b':'none'
@@ -1043,6 +1060,7 @@ function App() {
             }
             <input type="range" style = {{width:'100px'}}className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="12" step="1" value = {settings.canvasScale} onInput={(e) => {
                 const newScale = parseFloat(e.target.value);
+
                 setSettings({...settingsRef.current,canvasScale:newScale});
                 setGridDivs(createGridDivs(spritesRef.current[currentSpriteRef.current].width,spritesRef.current[currentSpriteRef.current].height,newScale));
               }} />
