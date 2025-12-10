@@ -159,14 +159,14 @@ function App() {
     let clickCoords;
     if(e.type === 'touchmove'){
       clickCoords = {
-        x:e.touches[0].pageX - dims.left,
-        y:e.touches[0].pageY - dims.top
+        x:e.touches[0].clientX - dims.left,
+        y:e.touches[0].clientY - dims.top
       };
     }
     else{
       clickCoords = {
-        x:e.pageX - dims.left,
-        y:e.pageY - dims.top
+        x:e.clientX - dims.left,
+        y:e.clientY - dims.top
       };
     }
     //px per char
@@ -221,27 +221,36 @@ function App() {
   }
   function handleMouseDown(e){
     const coords = getClickCoords(e);
+    console.log(e);
     startClickCoords.current = coords;
     const sprite = spritesRef.current[currentSpriteRef.current];
     switch(settingsRef.current.currentTool){
       case 'pixel':
         const newFrames = sprite.frames;
         newFrames[sprite.currentFrame].setPixel(coords.x,coords.y,settingsRef.current.currentColor);
-        renderCurrentFrameToMainCanvas();
+        setSprites(prev => (
+          [...prev]
+        ));
         break;
       case 'fill':{
         const newFrames = sprite.frames;
         newFrames[sprite.currentFrame].fill(coords.x,coords.y,settingsRef.current.currentColor);
-        renderCurrentFrameToMainCanvas();
-      }
+        setSprites(prev => (
+          [...prev]
+        ));
+        }
         break;
       case 'line':
-        //make a backup of the line
-        pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
-        setSettings({
-          ...settingsRef.current,
-          lineStarted : true
-        });
+        //if you haven't started drawing a line yet
+        if(!settingsRef.current.lineStarted){
+          startClickCoords.current = coords;
+          //make a backup of the line
+          pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
+          setSettings({
+            ...settingsRef.current,
+            lineStarted : true
+          });
+        }
       case 'move':
         if(!settingsRef.current.moveStarted){
           //store the selected area
@@ -296,20 +305,36 @@ function App() {
       switch(settingsRef.current.currentTool){
         case 'pixel':
           sprite.frames[sprite.currentFrame].setPixel(coords.x,coords.y,settingsRef.current.currentColor);
-          renderCurrentFrameToMainCanvas();
+          setSprites(prev => (
+            [...prev]
+          ));
           break;
         case 'line':
           //if you've already started a line, draw it
           if(settingsRef.current.lineStarted){
             sprite.frames[sprite.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,pixelSaveState.current.data);
             sprite.frames[sprite.currentFrame].drawLine(startClickCoords.current.x,startClickCoords.current.y,coords.x,coords.y,settingsRef.current.currentColor);
-            renderCurrentFrameToMainCanvas();
+            setSprites(prev => (
+              [...prev]
+            ));
+          }
+          //if you haven't, start one rn
+          else{
+            startClickCoords.current = coords;
+            //make a backup of the line
+            pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
+            setSettings({
+              ...settingsRef.current,
+              lineStarted : true
+            });
           }
           break;
         case 'fill':{
-          sprite.frames[sprite.currentFrame].fill(coords.x,coords.y,settingsRef.current.currentColor);
-          renderCurrentFrameToMainCanvas();
-        }
+            sprite.frames[sprite.currentFrame].fill(coords.x,coords.y,settingsRef.current.currentColor);
+            setSprites(prev => (
+              [...prev]
+            ));
+          }
           break;
         case 'move':
           if(settingsRef.current.moveStarted){
@@ -320,7 +345,6 @@ function App() {
             if(movement.x || movement.y){
               startClickCoords.current = coords;
               shiftPixels(movement);
-              // renderCurrentFrameToMainCanvas();
             }
           }
           break;
@@ -381,7 +405,6 @@ function App() {
     setSprites(prev => (
       [...prev]
     ));
-    // renderCurrentFrameToMainCanvas();
   }
 
   function renderCurrentFrameToMainCanvas(){
@@ -518,7 +541,6 @@ function App() {
         case '8':
         case '9':
           const newVal = parseInt(e.key)-1;
-          console.log(newVal);
           if(newVal<sprite.frames.length){
             sprite.currentFrame = newVal;
             setSprites(prev => (
@@ -669,25 +691,19 @@ function App() {
       height:height*scale + 'px',
       display:'grid',
       position:'absolute',
-      gridTemplateColumns:'repeat('+width+',1fr)',
-      gridTemplateRows:'repeat('+height+',1fr)'
+      gridTemplateColumns: `repeat(${width}, ${scale}px)`,
+      gridTemplateRows: `repeat(${height}, ${scale}px)`,
     }
     const borderStyle = '1px dashed #535889ff';
     for(let i = 0; i<width*height; i++){
       const childStyle = {
-        width:((scale-1) - 1/width)+'px',
-        height:((scale-1) - 1/height)+'px',
-        border:'1px dashed transparent',
-        borderLeft:'none',
-        borderTop:'none'
+        boxSizing: 'border-box',
+        width: scale + 'px',
+        height: scale + 'px',
+        border:borderStyle,
+        borderLeft: i % width === 0 ? borderStyle : '1px dashed transparent',
+        borderTop: i < width ? borderStyle : '1px dashed transparent',
       };
-      childStyle.border = borderStyle;
-      if((i%width) == 0){
-        childStyle.borderLeft = borderStyle;
-      }
-      if(i<width){
-        childStyle.borderTop = borderStyle;
-      }
       children.push(<div key = {i} id = {"grid_div_"+i} className = "grid_div" style = {childStyle}></div>);
     }
     return(<div style = {parentStyle}>{children}</div>);
@@ -781,7 +797,6 @@ function App() {
     setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
   }
   function loadImage(files){
-    console.log(files);
     //parsing files by name
     if(settingsRef.current.parseFilesToSpritesByName){
       const filesByName = [];
@@ -961,7 +976,6 @@ function App() {
     height:sprites[currentSprite].height*settings.canvasScale +'px',
     gridArea:'canvas',
     pointerEvents: 'auto',
-    boxShadow:'5px 5px 5px #46788b'
   };
 
   const canvasContainerStyle = {
@@ -973,6 +987,7 @@ function App() {
     marginBottom:((sprites[currentSprite].height)*settings.canvasScale)*0.2+'px',
     width:sprites[currentSprite].width*settings.canvasScale +'px',
     height:sprites[currentSprite].height*settings.canvasScale +'px',
+    boxShadow:(typeof window.safari === "undefined")?'5px 5px 5px #46788b':'none'
   };
 
   return (
@@ -981,15 +996,15 @@ function App() {
         {/* title image, gifs */}
         <div id = "title_container">
           <img id = "title_image" className = "transparent_img_drop_shadow" style = {{width:'200px'}} src = 'title.gif'/>
-          <img id = "gif_1" className = "title_gif " src = 'tamo_idle.gif' style = {{left:'-45px',top:'-40px'}} ></img>
-          <img id = "gif_2" className = "title_gif " src = 'porcini_happy.gif' style = {{left:'185px',top:'-40px'}} ></img>
-          <img id = "gif_3" className = "title_gif " src = 'bug_angry.gif' style = {{left:'-60px',top:'40px'}} ></img>
-          <img id = "gif_4" className = "title_gif " src = 'boto_sad.gif' style = {{left:'200px',top:'40px'}} ></img>
+          <img id = "gif_1" className = "title_gif " src = 'tamo_idle.gif' style = {{left:'-55px',top:'-40px'}} ></img>
+          <img id = "gif_2" className = "title_gif " src = 'porcini_happy.gif' style = {{left:'195px',top:'-40px'}} ></img>
+          <img id = "gif_3" className = "title_gif " src = 'bug_angry.gif' style = {{left:'-70px',top:'40px'}} ></img>
+          <img id = "gif_4" className = "title_gif " src = 'boto_sad.gif' style = {{left:'210px',top:'40px'}} ></img>
         </div>
         {/* grid overlay, border image, and main canvas */}
         <div id = "canvas_container_container">
           <div id = "canvas_container" style = {canvasContainerStyle}>
-            <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave = {handleMouseLeave} onTouchMove={handleMouseMove}></canvas>
+            <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}  onMouseLeave = {handleMouseLeave} onTouchEnd={handleMouseUp} onTouchCancel={handleMouseUp} onTouchMove={handleMouseMove}></canvas>
             {settings.overlayGrid && gridDivs}
             {(sprites[currentSprite].width <= 32) && (sprites[currentSprite].height <= 32) &&
             <img id = "canvas_border" className = "transparent_img_drop_shadow" src = 'border_transparent.png' style = {canvasBorderImageStyle}></img>
