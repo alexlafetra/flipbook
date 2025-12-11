@@ -1,7 +1,6 @@
-import { useState } from 'react'
 import { RgbaColorPicker } from "react-colorful";
 
-function hexToRgba(hex) {
+export function hexToRGBA(hex) {
   const raw = hex.replace("#", "");
   const bigint = parseInt(raw, 16);
 
@@ -13,7 +12,7 @@ function hexToRgba(hex) {
   return { r, g, b, a };
 }
 
-function rgbaToHex(rgbaColor){
+export function rgbaToHex(rgbaColor){
     const r = rgbaColor.r.toString(16).padStart(2,'0');
     const g = rgbaColor.g.toString(16).padStart(2,'0');
     const b = rgbaColor.b.toString(16).padStart(2,'0');
@@ -22,19 +21,16 @@ function rgbaToHex(rgbaColor){
     return '#'+r+g+b+a;
 }
 
-export function ColorPicker({label,callback,defaultValue}){
-
-    const [value,setValue] = useState(hexToRgba(defaultValue));
+export function ColorPicker({label,callback,value}){
 
     const callbackFn = (rgbaColor) => {
         callback(rgbaToHex(rgbaColor));
-        setValue(rgbaColor);
     }
 
     return(
         <div className = 'colorpicker' style = {{width:'50px',height:'120px',padding:'10px',display:'flex',justifyContent:'center',flexDirection:'row'}}>
             <div className = "colorpicker_label">{label}</div>
-            <RgbaColorPicker style = {{cursor:'pointer',width:'100%',height:'100%'}}color={value} onChange={callbackFn}/>
+            <RgbaColorPicker style = {{cursor:'pointer',width:'100%',height:'100%'}}color={hexToRGBA(value)} onChange={callbackFn}/>
         </div>
     )
 }
