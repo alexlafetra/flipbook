@@ -25,7 +25,7 @@ function App() {
     overlayGrid: true,
     frameSpeed : 600,//speed in ms
     currentTool: 'pixel',
-    tooltip:'pixel',
+    tooltip:null,
     currentColor:1,//1 for white, 0 for black
     canvasScale:12,
     playing:false,
@@ -38,6 +38,7 @@ function App() {
     maxCanvasDimension:200,
     palletteOpen:false,
     settingsBoxOpen:true,
+    renderByteArray:true,
     foregroundColor:'#ffffffff',
     backgroundColor:'#000000ff',
     overlayColor:'#4b4b4bff'
@@ -57,7 +58,7 @@ function App() {
   const undoBuffer = useRef([]);
   const redoBuffer = useRef([]);
 
-  const [currentMouseCoords,setCurrentMouseCoords] = useState({x:0,y:0});
+  const [currentMouseCoords,setCurrentMouseCoords] = useState(null);
   const currentMouseCoordsRef = useRef(currentMouseCoords);
   useEffect(() => {
     currentMouseCoordsRef.current = currentMouseCoords;
@@ -175,7 +176,7 @@ function App() {
 
   useEffect(() => {
     renderCurrentFrameToMainCanvas();
-  },[sprites,currentSprite,settings]);
+  },[sprites,currentSprite,settings,currentMouseCoords]);
 
 
   useEffect(() => {
@@ -359,6 +360,7 @@ function App() {
   }
   function handleMouseLeave(e){
     setCurrentMouseCoords(null);
+    setSettings({...settingsRef.current,tooltip:null});
   }
   function handleMouseMove(e){
     const coords = getClickCoords(e);
@@ -541,13 +543,18 @@ function App() {
     for(let x = 0; x<sprite.width; x++){
       for(let y = 0; y<sprite.height; y++){
         let bgColor = settingsRef.current.backgroundColor;
+
+        // if(currentMouseCoordsRef.current != null && currentMouseCoordsRef.current.x == x && currentMouseCoordsRef.current.y == y)
+        //   context.fillStyle = '#008b00ff';
         //if there's a previous frame, ghost it
         if(previousFrame !== undefined  && settingsRef.current.overlayGhosting){
           const fColor = hexToRGBA(settingsRef.current.foregroundColor);
           const ghostColor = rgbaToHex({r:fColor.r * 0.6,g:fColor.g * 0.6,b:fColor.b * 0.6,a:fColor.a});
           bgColor = sprite.frames[previousFrame].getPixel(x,y)?ghostColor:bgColor;
+          context.fillStyle = sprite.frames[sprite.currentFrame].getPixel(x,y)?settingsRef.current.foregroundColor:bgColor;
         }
-        context.fillStyle = sprite.frames[sprite.currentFrame].getPixel(x,y)?settingsRef.current.foregroundColor:bgColor;
+        else
+          context.fillStyle = sprite.frames[sprite.currentFrame].getPixel(x,y)?settingsRef.current.foregroundColor:bgColor;
         context.fillRect(x,y,1,1);
       }
     }
@@ -842,6 +849,12 @@ function App() {
       <div style = {{display:'flex',flexDirection:'column',width:'fit-content',border:'1px solid',borderRadius:'10px',paddingLeft:'10px',paddingRight:'10px',height:'fit-content',maxHeight:'400px',overflowY:'scroll'}}>
         {children}
       </div>
+    )
+  }
+
+  const ToolButton = function({tooltip,state,onClick,src,text}){
+    return(
+      <div className = "button" style = {{backgroundColor:state?'blue':null,color:state?'white':null}} onClick = {onClick} onMouseEnter = {(e) => {setSettings({...settingsRef.current,tooltip:tooltip})}} onMouseLeave={(e) => {setSettings({...settingsRef.current,tooltip:null})}}>{src && <img className = "tool_icon" src = {src}></img>}{text && <div>{text}</div>}</div>
     )
   }
 
@@ -1258,6 +1271,9 @@ function App() {
     );
   }
 
+  function clearTooltip(){
+    setSettings({...settingsRef.current,tooltip:null});
+  }
 
   return (
     <div className = "center_container">
@@ -1273,7 +1289,7 @@ function App() {
         {/* grid overlay, border image, and main canvas */}
         <div id = "canvas_container_container">
           <div id = "canvas_container" style = {canvasContainerStyle}>
-            <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}  onMouseLeave = {handleMouseLeave} onTouchEnd={handleMouseUp} onTouchCancel={handleMouseUp} onTouchMove={handleMouseMove}></canvas>
+            <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:settingsRef.current.currentTool})} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}  onMouseLeave = {handleMouseLeave} onTouchEnd={handleMouseUp} onTouchCancel={handleMouseUp} onTouchMove={handleMouseMove}></canvas>
             {settings.overlayGrid && gridDivs}
             {(sprites[currentSprite].width <= 32) && (sprites[currentSprite].height <= 32) && (settings.canvasScale*sprites[currentSprite].width<=256) &&
             <img id = "canvas_border" className = "transparent_img_drop_shadow" src = 'border_animated.gif' style = {canvasBorderImageStyle}></img>
@@ -1303,16 +1319,16 @@ function App() {
             <div className = "button" onClick = {reverseFrames}>{" reverse order "}</div>
           </div>
           <div style = {{display:'flex',alignItems:'center'}}>
-            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'white',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width}/>
+            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'white',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'sprite width'})}/>
             <p style = {{fontStyle:'italic',fontFamily:'times'}}>x</p>
-            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'white',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height}/>
+            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'white',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'sprite height'})}/>
             {(userInputDimensions.height != sprites[currentSprite].height || userInputDimensions.width != sprites[currentSprite].width) &&
               <div className = "button" onClick = {resizeCanvasToNewDimensions}>resize</div>
             }
             <div className = "button_holder" style = {{flexDirection:'column',width:'fit-content'}}>
               <div style = {{fontStyle:'italic',margin:'auto',marginBottom:'-10px',}}>zoom</div>
               <div className = "button_holder" style = {{}}>
-                <input type="range" style = {{width:'100px'}}className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" value = {settings.canvasScale} onInput={(e) => {
+                <input type="range" style = {{width:'100px'}} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'canvas zoom'})} className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" value = {settings.canvasScale} onInput={(e) => {
                     const newScale = parseFloat(e.target.value);
                     setSettings({...settingsRef.current,canvasScale:newScale});
                     setGridDivs(createGridDivs(spritesRef.current[currentSpriteRef.current].width,spritesRef.current[currentSpriteRef.current].height,newScale));
@@ -1326,34 +1342,35 @@ function App() {
           }
 
           {/* pixel/canvases manipulation tools */}
-          <div>tools -- {settings.currentTool} {currentMouseCoords &&'['+currentMouseCoords.x+','+currentMouseCoords.y+']'}</div>
+          
+          <div>tools{settings.tooltip && <>  -- {settings.tooltip} {currentMouseCoords &&'['+currentMouseCoords.x+','+currentMouseCoords.y+']'}</>}</div>
           <div className = "button_holder">
             <div className = "button" style = {{border:'1px solid black',backgroundColor:settings.currentColor == 1?settings.foregroundColor:settings.backgroundColor,width:'20px',height:'20px'}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'pixel'?'blue':'white',color:settings.currentTool == 'pixel'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'pixel'})}}><img className = "tool_icon" src = "pixel_icon.gif"></img></div>
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'line'?'blue':'white',color:settings.currentTool == 'line'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'line'})}}><img className = "tool_icon" src = "line_icon.gif"></img></div>
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'fill'?'blue':'white',color:settings.currentTool == 'fill'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'fill'})}}><img className = "tool_icon" src = "fill_icon.gif"></img></div>
+            <ToolButton tooltip = "pixel" state = {settings.currentTool === 'pixel'} src={"pixel_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'pixel'})}/>
+            <ToolButton tooltip = "line" state = {settings.currentTool === 'line'} src={"line_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'line'})}/>
+            <ToolButton tooltip = "fill" state = {settings.currentTool === 'fill'} src={"fill_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'fill'})}/>
           </div>
           <div className = "button_holder">
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'select'?'blue':'white',color:settings.currentTool == 'select'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'select'})}}><img className = "tool_icon" src = "select_icon.gif"></img></div>
-            <div className = "button" style = {{backgroundColor:settings.currentTool == 'move'?'blue':'white',color:settings.currentTool == 'move'?'white':'inherit'}} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}><img className = "tool_icon" src = "move_icon.gif"></img></div>
-            <div className = "button" onClick = {clearFrame}><img className = "tool_icon" src = "clear_icon.gif"></img></div>
+            <ToolButton tooltip = "select" state = {settings.currentTool === 'select'} src={"select_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'select'})}/>
+            <ToolButton tooltip = "move" state = {settings.currentTool == 'move'} src={"move_icon.gif"} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}/>
+            <ToolButton tooltip = "clear frame" state = {false} src={"clear_icon.gif"} onClick = {clearFrame}/>
             {(undoBuffer.current.length>0) &&
-              <div className = "button" onClick = {undo}><img className = "tool_icon" src = "undo_icon.gif"></img></div>
+              <ToolButton tooltip = "undo" state = {false} src={"undo_icon.gif"} onClick = {undo}/>
             }
             {(undoBuffer.current.length == 0) &&
               <div className = "button" style = {{color:'#c2c2c2ff',borderColor:'#c2c2c2ff',backgroundColor:'white',cursor:'not-allowed'}}><img className = "tool_icon" style = {{filter:'brightness(0.5)'}}src = "undo_icon.gif"></img></div>
             }
             {(redoBuffer.current.length>0) &&
-              <div className = "button" onClick = {redo}><img className = "tool_icon" src = "redo_icon.gif"></img></div>
+              <ToolButton tooltip = "redo" state = {false} src={"redo_icon.gif"} onClick = {redo}/>
             }
             {(redoBuffer.current.length == 0) &&
               <div className = "button" style = {{color:'#c2c2c2ff',borderColor:'#c2c2c2ff',backgroundColor:'white',cursor:'not-allowed'}}><img className = "tool_icon" style = {{filter:'brightness(0.5)'}}src = "redo_icon.gif"></img></div>
             }         </div>
           <div className = "button_holder">
-            <div className = "button" onClick = {invertFrame}>{" invert "}</div>
-            <div className = "button" onClick = {mirrorHorizontally}>{" ⇠⇢ "}</div>
-            <div className = "button" onClick = {mirrorVertically}>{" ⇡⇣ "}</div>
-            <div className = "button" style = {{backgroundColor:settings.palletteOpen?'blue':'white',color:settings.palletteOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,palletteOpen:!settingsRef.current.palletteOpen})}>{" color "}</div>
+            <ToolButton tooltip = "invert" state = {false} text = " invert " onClick = {invertFrame}/>
+            <ToolButton tooltip = "mirror horizontally" state = {false} text = " ⇠⇢ " onClick = {mirrorHorizontally}/>
+            <ToolButton tooltip = "mirror vertically" state = {false} text = " ⇡⇣ " onClick = {mirrorVertically}/>
+            <ToolButton tooltip = "open color pallette" state = {settings.palletteOpen} text = " pallette " onClick = {()=> setSettings({...settingsRef.current,palletteOpen:!settingsRef.current.palletteOpen})}/>
           </div>
           {settings.palletteOpen &&
             <div style = {{display:'flex',padding:'10px',marginTop:'10px',borderRadius:'30px',backgroundColor:'black',width:'fit-content'}}>
@@ -1400,13 +1417,16 @@ function App() {
             <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,resizeCanvasToImage:!settingsRef.current.resizeCanvasToImage});}}>{settings.resizeCanvasToImage?(<>resize to uploaded image: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"resize to uploaded image: OFF"}</div>
             <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,useAlphaAsBackground:!settingsRef.current.useAlphaAsBackground});}}>{settings.useAlphaAsBackground?(<>use transparency to determine background: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"use transparency to determine background: OFF"}</div>
             <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,parseFilesToSpritesByName:!settingsRef.current.parseFilesToSpritesByName});}}>{settings.parseFilesToSpritesByName?(<>autogen sprites from filenames: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"autogen sprites from filenames: OFF"}</div>
+            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,renderByteArray:!settingsRef.current.renderByteArray});}}>{settings.renderByteArray?(<>render C++ byte array: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"render C++ byte array: OFF"}</div>
           </div>
           }
         </div>
 
         {/* download links */}
         <div id = "download_link_container">
-          <ByteArrayText></ByteArrayText>
+          {settings.renderByteArray &&
+            <ByteArrayText></ByteArrayText>
+          }
           <p style = {{padding:'none',marginBottom:'0px',fontFamily:'chopin',fontWeight:'normal',fontSize:'20px'}}>Name Prefix:</p>
           <textarea style = {{fieldSizing:'content',height:'1em',borderRadius:'6px',backgroundColor:'blue',color:'white',padding:'4px',resize:'none',alignContent:'center'}} onInput={(e) => 
             {
