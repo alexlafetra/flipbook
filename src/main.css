@@ -201,9 +201,11 @@
 }
 .preview_canvas{
     border:4px solid black;
-    margin:1px;
     border-radius:10px;
     transition:0.1s;
+}
+.preview_canvas_holder{
+    margin:1px;
 }
 .preview_canvas:hover{
     filter:brightness(0.4);

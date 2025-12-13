@@ -55,14 +55,16 @@ function App() {
   const mainCanvasRef = useRef(null);
   //use this to clear the playNextFrame() timeout
   const timeoutIDRef = useRef(null);
-  const undoBuffer = useRef([]);
-  const redoBuffer = useRef([]);
 
   const [currentMouseCoords,setCurrentMouseCoords] = useState(null);
   const currentMouseCoordsRef = useRef(currentMouseCoords);
   useEffect(() => {
     currentMouseCoordsRef.current = currentMouseCoords;
   }, [currentMouseCoords]);
+
+
+  const undoBuffer = useRef([]);
+  const redoBuffer = useRef([]);
 
   function pushUndoState(){
     //if the buffer gets long enough, start removing early entries
@@ -852,9 +854,13 @@ function App() {
     )
   }
 
-  const ToolButton = function({tooltip,state,onClick,src,text}){
+  const ToolButton = function({style,tooltip,state,onClick,src,text}){
+    const buttonStyle = style?style:{};
+    buttonStyle.backgroundColor = state?'blue':null;
+    buttonStyle.color = state?'white':null;
+
     return(
-      <div className = "button" style = {{backgroundColor:state?'blue':null,color:state?'white':null}} onClick = {onClick} onMouseEnter = {(e) => {setSettings({...settingsRef.current,tooltip:tooltip})}} onMouseLeave={(e) => {setSettings({...settingsRef.current,tooltip:null})}}>{src && <img className = "tool_icon" src = {src}></img>}{text && <div>{text}</div>}</div>
+      <div className = "button" style = {buttonStyle} onClick = {onClick} onMouseEnter = {(e) => {setSettings({...settingsRef.current,tooltip:tooltip})}} onMouseLeave={(e) => {setSettings({...settingsRef.current,tooltip:null})}}>{src && <img className = "tool_icon" src = {src}></img>}{text && <div>{text}</div>}</div>
     )
   }
 
@@ -1184,31 +1190,31 @@ function App() {
       }
 
       return(
-      <div className = "preview_canvas_holder" key = {index+'_canvas_holder'} style = {{position:'relative'}}>
+      <div className = "preview_canvas_holder" key = {index+'_canvas_holder'} style = {{position:'relative',width:'fit-content',height:'fit-content'}}>
         <canvas key = {index+'_canvas'} className = "preview_canvas" 
-          style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'#8cc31eff':'inherit',cursor:'pointer',imageRendering:'pixelated',width:scaledWidth+'px',height:scaledHeight+'px'}} 
-          ref = 
-          {(el)=>{
-            if(el){
-              const ctx = el.getContext('2d');
-              el.width = sprites[currentSprite].width;
-              el.height = sprites[currentSprite].height;
-              renderFrame(ctx,sprites[currentSprite],index,{x:0,y:0});
+            style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'#8cc31eff':'inherit',cursor:'pointer',imageRendering:'pixelated',width:scaledWidth+'px',height:scaledHeight+'px'}} 
+            ref = 
+            {(el)=>{
+              if(el){
+                const ctx = el.getContext('2d');
+                el.width = sprites[currentSprite].width;
+                el.height = sprites[currentSprite].height;
+                renderFrame(ctx,sprites[currentSprite],index,{x:0,y:0});
+              }
+            }}
+            onClick = {(e)=>{
+              const sprite = spritesRef.current[currentSpriteRef.current];
+              sprite.currentFrame = index;
+              // force React to rerender
+              setSprites(prev => (
+                [...prev]
+              ));
             }
-          }}
-          onClick = {(e)=>{
-            const sprite = spritesRef.current[currentSpriteRef.current];
-            sprite.currentFrame = index;
-            // force React to rerender
-            setSprites(prev => (
-              [...prev]
-            ));
+          }>
+          </canvas>
+          {sprites[currentSprite].frames.length > 1 &&
+            <div key = {index+'_delete_button'} className = "button" style = {{whiteSpace:'pre',justifyContent:'center',alignItems:'center',display:'flex',position:'absolute',top:'-3px',right:'-3px',width:'3px',height:'3px',borderRadius:'3px',margin:'0px'}}onClick = {()=>{deleteFrame(index)}}>{'x'}</div>
           }
-        }>
-        </canvas>
-        {sprites[currentSprite].frames.length > 1 &&
-          <div key = {index+'_delete_button'} className = "button" style = {{whiteSpace:'pre',justifyContent:'center',alignItems:'center',display:'flex',position:'absolute',top:'-3px',right:'-3px',width:'3px',height:'3px',borderRadius:'3px'}}onClick = {()=>{deleteFrame(index)}}>{'x'}</div>
-        }
         </div>);
     });
   }
@@ -1306,11 +1312,11 @@ function App() {
         {/* ui */}
         <div className = "ui_container">
           {/* preview canvases */}
-          <div id = "preview_gallery_holder" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',height:'fit-content',overflowY:'scroll',paddingTop:'5px'}}>
+          <div style = {{marginTop:'5px'}}>frame -- {sprites[currentSprite].currentFrame+1} / {sprites[currentSprite].frames.length}</div>
+          <div id = "preview_gallery_holder" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',height:'fit-content',overflowY:'scroll',marginTop:'5px',padding:'4px',borderRadius:'10px',border:'1px dashed black'}}>
             {createPreviewCanvases()}
             <div className = "button" onClick = {addNewFrame}>{" + "}</div>
           </div>
-          <div>frame -- {sprites[currentSprite].currentFrame+1} / {sprites[currentSprite].frames.length}</div>
           
           {/* frame editing */}
           <div className = "button_holder">
@@ -1354,18 +1360,9 @@ function App() {
             <ToolButton tooltip = "select" state = {settings.currentTool === 'select'} src={"select_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'select'})}/>
             <ToolButton tooltip = "move" state = {settings.currentTool == 'move'} src={"move_icon.gif"} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}/>
             <ToolButton tooltip = "clear frame" state = {false} src={"clear_icon.gif"} onClick = {clearFrame}/>
-            {(undoBuffer.current.length>0) &&
-              <ToolButton tooltip = "undo" state = {false} src={"undo_icon.gif"} onClick = {undo}/>
-            }
-            {(undoBuffer.current.length == 0) &&
-              <div className = "button" style = {{color:'#c2c2c2ff',borderColor:'#c2c2c2ff',backgroundColor:'white',cursor:'not-allowed'}}><img className = "tool_icon" style = {{filter:'brightness(0.5)'}}src = "undo_icon.gif"></img></div>
-            }
-            {(redoBuffer.current.length>0) &&
-              <ToolButton tooltip = "redo" state = {false} src={"redo_icon.gif"} onClick = {redo}/>
-            }
-            {(redoBuffer.current.length == 0) &&
-              <div className = "button" style = {{color:'#c2c2c2ff',borderColor:'#c2c2c2ff',backgroundColor:'white',cursor:'not-allowed'}}><img className = "tool_icon" style = {{filter:'brightness(0.5)'}}src = "redo_icon.gif"></img></div>
-            }         </div>
+            <ToolButton style = {{filter:undoBuffer.current.length == 0?'contrast(80%)':null,color:undoBuffer.current.length == 0?'#c2c2c2ff':null,borderColor:undoBuffer.current.length == 0?'#c2c2c2ff':null,backgroundColor:undoBuffer.current.length == 0?'white':null,cursor:undoBuffer.current.length == 0?'not-allowed':null}} tooltip = "undo" state = {false} src={"undo_icon.gif"} onClick = {undo}/>
+            <ToolButton style = {{filter:redoBuffer.current.length == 0?'contrast(80%)':null,color:redoBuffer.current.length == 0?'#c2c2c2ff':null,borderColor:redoBuffer.current.length == 0?'#c2c2c2ff':null,backgroundColor:redoBuffer.current.length == 0?'white':null,cursor:redoBuffer.current.length == 0?'not-allowed':null}} tooltip = "redo" state = {false} src={"redo_icon.gif"} onClick = {redo}/>
+          </div>
           <div className = "button_holder">
             <ToolButton tooltip = "invert" state = {false} text = " invert " onClick = {invertFrame}/>
             <ToolButton tooltip = "mirror horizontally" state = {false} text = " ⇠⇢ " onClick = {mirrorHorizontally}/>
