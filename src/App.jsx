@@ -7,6 +7,7 @@ import { TabTitle } from './components/TabTitle';
 import { SelectionBox } from './SelectionBox';
 import { canvasesToGif, gifToSprite } from './gifs';
 import { DropZone } from './components/DropZone';
+import { Setting } from './components/SettingsButton';
 
 // helpful chatGPT react tip:
 /*
@@ -774,6 +775,9 @@ function App() {
   }
 
   function downloadAllFramesAsBMPs(){
+    //create a new JSZip object
+    zip.current = new JSZip();
+
     const tempCanvas = document.createElement('canvas');
     const fileName = spritesRef.current[0].fileName.split('_')[0];
     //call this function recursively, when each file is zipped it zips the next one!
@@ -782,7 +786,7 @@ function App() {
       tempCanvas.width = sprite.width;
       tempCanvas.height = sprite.height;
       renderFrame(tempCanvas.getContext('2d'),sprite,frameIndex,{x:0,y:0});
-      tempCanvas.toBlob((blob) => {
+      window.CanvasToBMP.toBlob(tempCanvas,(blob) => {
         const filename = sprite.fileName+'_'+(frameIndex+1)+'.bmp';
         zip.current.file(filename,blob);
         if(frameIndex < sprite.frames.length-1){
@@ -806,13 +810,14 @@ function App() {
     tempCanvas.width = sprite.width;
     tempCanvas.height = sprite.height;
     renderFrame(tempCanvas.getContext('2d'),sprite,frame,{x:0,y:0});
-    tempCanvas.toBlob((blob) => {
+    window.CanvasToBMP.toBlob(tempCanvas,(blob) => {
       const a = document.createElement('a');
-      const filename = sprite.fileName+'_'+(frame+1)+'.bmp';
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
+      const url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = sprite.fileName+'_'+(frame+1)+'.bmp';;
       a.click();
       a.remove();
+      URL.revokeObjectURL(url);
       tempCanvas.remove();
     });
   }
@@ -1395,13 +1400,16 @@ function App() {
           </div>
           {settings.settingsBoxOpen &&
           <div style = {{borderLeft:'1px solid black',width:'350px',padding:'10px'}}>
-            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,renderByteArray:!settingsRef.current.renderByteArray});}}>{settings.renderByteArray?(<>C++ byte array: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"render C++ byte array: OFF"}</div>
-            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overwriteWithBackground:!settingsRef.current.overwriteWithBackground});}}>{settings.overwriteWithBackground?(<>background overwrites foreground when moving: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"background overwrites foreground when moving: OFF"}</div>
-            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overlayGhosting:!settingsRef.current.overlayGhosting});}}>{settings.overlayGhosting?(<>ghosting: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON"}</span></>):"ghosting: OFF"}</div>
-            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overlayGrid:!settingsRef.current.overlayGrid});}}>{settings.overlayGrid?(<>grid: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"grid: OFF"}</div>
-            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,resizeCanvasToImage:!settingsRef.current.resizeCanvasToImage});}}>{settings.resizeCanvasToImage?(<>resize canvas to uploaded image: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"resize to uploaded image: OFF"}</div>
-            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,useAlphaAsBackground:!settingsRef.current.useAlphaAsBackground});}}>{settings.useAlphaAsBackground?(<>use transparency to determine background: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"use transparency to determine background: OFF"}</div>
-            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,parseFilesToSpritesByName:!settingsRef.current.parseFilesToSpritesByName});}}>{settings.parseFilesToSpritesByName?(<>autogen sprites from filenames: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"autogen sprites from filenames: OFF"}</div>
+            <Setting text = 'C++ byte array' callback = {() => {setSettings({...settingsRef.current,renderByteArray:!settingsRef.current.renderByteArray});}} state = {settings.renderByteArray}/>
+            <Setting text = 'background overwrites foreground when moving' callback = {() => {setSettings({...settingsRef.current,overwriteWithBackground:!settingsRef.current.overwriteWithBackground});}} state = {settings.overwriteWithBackground}/>
+            <Setting text = 'ghosting' callback = {() => {setSettings({...settingsRef.current,overlayGhosting:!settingsRef.current.overlayGhosting});}} state = {settings.overlayGhosting}/>
+            <Setting text = 'grid' callback = {() => {setSettings({...settingsRef.current,overlayGrid:!settingsRef.current.overlayGrid});}} state = {settings.overlayGrid}/>
+            <div className = "ui_label" style = {{paddingTop:'10px'}}>uploading images:</div>
+            <div className = "button_holder" style = {{border:'1px dashed black',borderRadius:'10px',flexDirection:'column'}}>
+              <Setting text = 'resize canvas to new image' callback = {() => {setSettings({...settingsRef.current,resizeCanvasToImage:!settingsRef.current.resizeCanvasToImage});}} state = {settings.resizeCanvasToImage}/>
+              <Setting text = 'treat transparency as background' callback = {() => {setSettings({...settingsRef.current,useAlphaAsBackground:!settingsRef.current.useAlphaAsBackground});}} state = {settings.useAlphaAsBackground}/>
+              <Setting text = 'organize & create sprites based on filenames' callback = {() => {setSettings({...settingsRef.current,parseFilesToSpritesByName:!settingsRef.current.parseFilesToSpritesByName});}} state = {settings.parseFilesToSpritesByName}/>
+            </div>
           </div>
           }
         </div>
