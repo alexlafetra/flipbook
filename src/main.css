@@ -83,8 +83,10 @@
     padding:4px;
     transition:0.1s;
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    align-items: center;
+    /* align-items: center; */
     justify-content: center;
+    justify-items: center;
+    align-content: center;
     background-color: white;
 }
 .button:hover{
@@ -98,6 +100,7 @@
     height:20px;
     mix-blend-mode:difference;
     position:relative;
+    pointer-events: none;
 }
 .spritesheet_tabs_container{
     grid-area: spritesheet_tabs;

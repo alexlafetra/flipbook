@@ -283,6 +283,7 @@ function App() {
           startClickCoords.current = coords;
           //make a backup of the line
           pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
+          sprite.frames[sprite.currentFrame].setPixel(coords.x,coords.y,settingsRef.current.currentColor);
           setSettings({
             ...settingsRef.current,
             lineStarted : true
@@ -292,16 +293,16 @@ function App() {
         if(!settingsRef.current.moveStarted){
           pushUndoState();
           //store the selected area
-          if(selectionBox.active){
-            selectedArea.current = PixelFrame(selectionBox.getWidth(),selectionBox.getHeight(),0);
+          if(selectionBoxRef.current.active){
+            selectedArea.current = PixelFrame(selectionBoxRef.current.getWidth(),selectionBoxRef.current.getHeight(),0);
             pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
             const bounds = {
               start: {x:Math.min(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.min(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)},
               end: {x:Math.max(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.max(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)}
             };
             //copy area into pixel array
-            for(let x = 0; x<selectionBox.getWidth(); x++){
-              for(let y = 0; y<selectionBox.getHeight(); y++){
+            for(let x = 0; x<selectionBoxRef.current.getWidth(); x++){
+              for(let y = 0; y<selectionBoxRef.current.getHeight(); y++){
                 selectedArea.current.setPixel(x,y,sprites[currentSprite].frames[sprites[currentSprite].currentFrame].getPixel(x+bounds.start.x,y+bounds.start.y));
                 //clear out pixels from canvas backup
                 pixelSaveState.current.setPixel(x+bounds.start.x,y+bounds.start.y,0);
@@ -947,13 +948,6 @@ function App() {
   }
 
   // gets images and turns them into anim frames
-  function dropHandler(ev) {
-    const files = [...ev.dataTransfer.items]
-      .map((item) => item.getAsFile())
-      .filter((file) => file);
-    loadImage(files);
-  }
-
   function loadFiles(fileList,sprite,startFrame){
     pushUndoState();
     if(fileList.length === 1){
@@ -1311,9 +1305,9 @@ function App() {
           
           {/* frame editing */}
           <div className = "button_holder">
-            <div className = "button" onClick = {settings.playing?()=>{stop();}:()=>{play();}}>{settings.playing?" ⏸︎ ":" ▶ "}</div>
-            <div className = "button" onClick = {()=>{duplicateFrame(spritesRef.current[currentSpriteRef.current].currentFrame)}}>{" duplicate "}</div>
-            <div className = "button" onClick = {reverseFrames}>{" reverse order "}</div>
+            <ToolButton tooltip = {settings.playing?"pause":"play"} state = {settings.playing} src={settings.playing?"pause_icon.gif":"play_icon.bmp"} onClick = {settings.playing?()=>{stop();}:()=>{play();}}/>
+            <ToolButton tooltip = "duplicate frame" state = {false} src={"duplicate_icon.gif"} onClick = {()=>{duplicateFrame(spritesRef.current[currentSpriteRef.current].currentFrame)}}/>
+            <ToolButton tooltip = "reverse order" state = {false} src={"reorder_icon.gif"} onClick = {reverseFrames}/>
           </div>
           <div className = "button_holder" style = {{alignItems:'center'}}>
             <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'white',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'sprite width'})}/>
@@ -1399,11 +1393,14 @@ function App() {
             <div className = "button" style = {{backgroundColor:settings.settingsBoxOpen?'blue':'white',color:settings.settingsBoxOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,settingsBoxOpen:!settingsRef.current.settingsBoxOpen})}>{" settings "}</div>
           </div>
           {settings.settingsBoxOpen &&
-          <div style = {{borderLeft:'1px solid black',width:'350px',padding:'10px'}}>
-            <Setting text = 'C++ byte array' callback = {() => {setSettings({...settingsRef.current,renderByteArray:!settingsRef.current.renderByteArray});}} state = {settings.renderByteArray}/>
-            <Setting text = 'background overwrites foreground when moving' callback = {() => {setSettings({...settingsRef.current,overwriteWithBackground:!settingsRef.current.overwriteWithBackground});}} state = {settings.overwriteWithBackground}/>
-            <Setting text = 'ghosting' callback = {() => {setSettings({...settingsRef.current,overlayGhosting:!settingsRef.current.overlayGhosting});}} state = {settings.overlayGhosting}/>
-            <Setting text = 'grid' callback = {() => {setSettings({...settingsRef.current,overlayGrid:!settingsRef.current.overlayGrid});}} state = {settings.overlayGrid}/>
+          <div style = {{width:'350px',padding:'10px'}}>
+            <div className = "ui_label" style = {{paddingTop:'10px'}}>settings:</div>
+            <div className = "button_holder" style = {{border:'1px dashed black',borderRadius:'10px',flexDirection:'column'}}>
+              <Setting text = 'C++ byte array' callback = {() => {setSettings({...settingsRef.current,renderByteArray:!settingsRef.current.renderByteArray});}} state = {settings.renderByteArray}/>
+              <Setting text = 'ghosting' callback = {() => {setSettings({...settingsRef.current,overlayGhosting:!settingsRef.current.overlayGhosting});}} state = {settings.overlayGhosting}/>
+              <Setting text = 'grid' callback = {() => {setSettings({...settingsRef.current,overlayGrid:!settingsRef.current.overlayGrid});}} state = {settings.overlayGrid}/>
+              <Setting text = 'background overwrites foreground when moving' callback = {() => {setSettings({...settingsRef.current,overwriteWithBackground:!settingsRef.current.overwriteWithBackground});}} state = {settings.overwriteWithBackground}/>
+            </div>
             <div className = "ui_label" style = {{paddingTop:'10px'}}>uploading images:</div>
             <div className = "button_holder" style = {{border:'1px dashed black',borderRadius:'10px',flexDirection:'column'}}>
               <Setting text = 'resize canvas to new image' callback = {() => {setSettings({...settingsRef.current,resizeCanvasToImage:!settingsRef.current.resizeCanvasToImage});}} state = {settings.resizeCanvasToImage}/>

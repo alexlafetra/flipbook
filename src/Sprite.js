@@ -9,7 +9,7 @@ export const Sprite = () => {
         width:defaultSize,
         height:defaultSize,
         currentFrame:0,
-        fileName : 'new_sprite',
+        fileName : 'sprite',
         nextFrame : function(){
             this.currentFrame = (this.currentFrame+1)%this.frames.length;
         },
