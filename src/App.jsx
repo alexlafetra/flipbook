@@ -8,7 +8,7 @@ import { SelectionBox } from './SelectionBox';
 import { canvasesToGif, gifToSprite } from './gifs';
 import { DropZone } from './components/DropZone';
 import { Setting } from './components/SettingsButton';
-
+import { CanvasToBMP } from './CanvasToBMP';
 // helpful chatGPT react tip:
 /*
 Important rule:
@@ -786,7 +786,7 @@ function App() {
       tempCanvas.width = sprite.width;
       tempCanvas.height = sprite.height;
       renderFrame(tempCanvas.getContext('2d'),sprite,frameIndex,{x:0,y:0});
-      window.CanvasToBMP.toBlob(tempCanvas,(blob) => {
+      CanvasToBMP.toBlob(tempCanvas,(blob) => {
         const filename = sprite.fileName+'_'+(frameIndex+1)+'.bmp';
         zip.current.file(filename,blob);
         if(frameIndex < sprite.frames.length-1){
@@ -810,7 +810,7 @@ function App() {
     tempCanvas.width = sprite.width;
     tempCanvas.height = sprite.height;
     renderFrame(tempCanvas.getContext('2d'),sprite,frame,{x:0,y:0});
-    window.CanvasToBMP.toBlob(tempCanvas,(blob) => {
+    CanvasToBMP.toBlob(tempCanvas,(blob) => {
       const a = document.createElement('a');
       const url = URL.createObjectURL(blob);
       a.href = url;
