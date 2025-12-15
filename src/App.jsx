@@ -852,7 +852,7 @@ function App() {
     buttonStyle.color = state?'white':null;
 
     return(
-      <div className = "button" style = {buttonStyle} onClick = {onClick} onMouseEnter = {(e) => {setSettings({...settingsRef.current,tooltip:tooltip})}} onMouseLeave={(e) => {setSettings({...settingsRef.current,tooltip:null})}}>{src && <img className = "tool_icon" src = {src}></img>}{text && <div>{text}</div>}</div>
+      <div className = "button" style = {buttonStyle} onTouchStart = {onClick} onClick = {onClick} onMouseEnter = {(e) => {setSettings({...settingsRef.current,tooltip:tooltip})}} onMouseLeave={(e) => {setSettings({...settingsRef.current,tooltip:null})}}>{src && <img className = "tool_icon" src = {src}></img>}{text && <div>{text}</div>}</div>
     )
   }
 
