@@ -6,7 +6,7 @@ import { ColorPicker, hexToRGBA, rgbaToHex } from './components/ColorPicker';
 import { TabTitle } from './components/TabTitle';
 import { SelectionBox } from './SelectionBox';
 import { canvasesToGif, gifToSprite } from './gifs';
-
+import { DropZone } from './components/DropZone';
 
 // helpful chatGPT react tip:
 /*
@@ -185,39 +185,6 @@ function App() {
     //add keyboard input event listener
     window.addEventListener("keydown",handleKeyDown);
     window.addEventListener("keyup",handleKeyUp);
-
-    //add in drop zone listeners
-    const dropZone = document.getElementById("drop-zone");
-    window.addEventListener("drop", (e) => {
-      if ([...e.dataTransfer.items].some((item) => item.kind === "file")) {
-        e.preventDefault();
-      }
-    });
-    dropZone.addEventListener("dragover", (e) => {
-      const fileItems = [...e.dataTransfer.items].filter(
-        (item) => item.kind === "file",
-      );
-      if (fileItems.length > 0) {
-        e.preventDefault();
-        if (fileItems.some((item) => item.type.startsWith("image/"))) {
-          e.dataTransfer.dropEffect = "copy";
-        } else {
-          e.dataTransfer.dropEffect = "none";
-        }
-      }
-    });
-    window.addEventListener("dragover", (e) => {
-      const fileItems = [...e.dataTransfer.items].filter(
-        (item) => item.kind === "file",
-      );
-      if (fileItems.length > 0) {
-        e.preventDefault();
-        if (!dropZone.contains(e.target)) {
-          e.dataTransfer.dropEffect = "none";
-        }
-      }
-    });
-    dropZone.addEventListener("drop", dropHandler);
   },[]);
 
   function getClickCoords(e){
@@ -433,6 +400,12 @@ function App() {
           break;
       }
     }
+    else{
+      setSettings({
+        ...settingsRef.current,
+        lineStarted : false
+      });
+    }
   }
   function cut(){
     copy(true);
@@ -544,22 +517,35 @@ function App() {
     //draw over each pixel
     for(let x = 0; x<sprite.width; x++){
       for(let y = 0; y<sprite.height; y++){
-        let bgColor = settingsRef.current.backgroundColor;
 
         // if(currentMouseCoordsRef.current != null && currentMouseCoordsRef.current.x == x && currentMouseCoordsRef.current.y == y)
         //   context.fillStyle = '#008b00ff';
-        //if there's a previous frame, ghost it
-        if(previousFrame !== undefined  && settingsRef.current.overlayGhosting){
-          const fColor = hexToRGBA(settingsRef.current.foregroundColor);
-          const ghostColor = rgbaToHex({r:fColor.r * 0.6,g:fColor.g * 0.6,b:fColor.b * 0.6,a:fColor.a});
-          bgColor = sprite.frames[previousFrame].getPixel(x,y)?ghostColor:bgColor;
-          context.fillStyle = sprite.frames[sprite.currentFrame].getPixel(x,y)?settingsRef.current.foregroundColor:bgColor;
+        //if there's a pixel there, draw foreground color
+        if(sprite.frames[sprite.currentFrame].getPixel(x,y)){
+          context.fillStyle = settingsRef.current.foregroundColor;
         }
-        else
-          context.fillStyle = sprite.frames[sprite.currentFrame].getPixel(x,y)?settingsRef.current.foregroundColor:bgColor;
+        else{
+          //if there's a no pixel, but one on a previous frame, ghost it
+          if(previousFrame !== undefined  && settingsRef.current.overlayGhosting && sprite.frames[previousFrame].getPixel(x,y)){
+            context.fillStyle = blendColor(settingsRef.current.foregroundColor,settingsRef.current.backgroundColor);
+          }
+          else{
+            context.fillStyle = settingsRef.current.backgroundColor;
+          }
+        }
         context.fillRect(x,y,1,1);
       }
     }
+  }
+
+  function blendColor(c1,c2){
+    let newBytes = '#';
+    for(let byte = 0; byte<3; byte++){
+      const b1 = c1.substring(byte+1,byte+3);
+      const b2 = c2.substring(byte+1,byte+3);
+      newBytes += (Math.round((parseInt(b1,16)+parseInt(b2,16))/2)).toString(16).padStart(2,'0');
+    }
+    return newBytes;
   }
 
   function renderFrame(context,sprite,frame,offset){
@@ -1192,7 +1178,7 @@ function App() {
       return(
       <div className = "preview_canvas_holder" key = {index+'_canvas_holder'} style = {{position:'relative',width:'fit-content',height:'fit-content'}}>
         <canvas key = {index+'_canvas'} className = "preview_canvas" 
-            style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'#8cc31eff':'inherit',cursor:'pointer',imageRendering:'pixelated',width:scaledWidth+'px',height:scaledHeight+'px'}} 
+            style = {{borderColor:(index == sprites[currentSprite].currentFrame)?'#0000ffff':'inherit',cursor:'pointer',imageRendering:'pixelated',width:scaledWidth+'px',height:scaledHeight+'px'}} 
             ref = 
             {(el)=>{
               if(el){
@@ -1273,7 +1259,7 @@ function App() {
     };
 
     return (
-      <div className = "button" onClick={generateGif}>export gif</div>
+      <div className = "button" onClick={generateGif}>{'save gif (.gif)'}</div>
     );
   }
 
@@ -1312,7 +1298,7 @@ function App() {
         {/* ui */}
         <div className = "ui_container">
           {/* preview canvases */}
-          <div style = {{marginTop:'5px'}}>frame -- {sprites[currentSprite].currentFrame+1} / {sprites[currentSprite].frames.length}</div>
+          <div className = "ui_label" style = {{marginTop:'5px'}}>frame -- {sprites[currentSprite].currentFrame+1} / {sprites[currentSprite].frames.length}</div>
           <div id = "preview_gallery_holder" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',height:'fit-content',overflowY:'scroll',marginTop:'5px',padding:'4px',borderRadius:'10px',border:'1px dashed black'}}>
             {createPreviewCanvases()}
             <div className = "button" onClick = {addNewFrame}>{" + "}</div>
@@ -1324,7 +1310,7 @@ function App() {
             <div className = "button" onClick = {()=>{duplicateFrame(spritesRef.current[currentSpriteRef.current].currentFrame)}}>{" duplicate "}</div>
             <div className = "button" onClick = {reverseFrames}>{" reverse order "}</div>
           </div>
-          <div style = {{display:'flex',alignItems:'center'}}>
+          <div className = "button_holder" style = {{alignItems:'center'}}>
             <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'white',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'sprite width'})}/>
             <p style = {{fontStyle:'italic',fontFamily:'times'}}>x</p>
             <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'white',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'sprite height'})}/>
@@ -1348,8 +1334,8 @@ function App() {
           }
 
           {/* pixel/canvases manipulation tools */}
-          
-          <div>tools{settings.tooltip && <>  -- {settings.tooltip} {currentMouseCoords &&'['+currentMouseCoords.x+','+currentMouseCoords.y+']'}</>}</div>
+          {/* tooltip */}
+          <div className = "ui_label">tools{settings.tooltip && <>  -- {settings.tooltip}</>}{settings.tooltip === null && <> -- {settings.currentTool}</>}{currentMouseCoords &&` [${currentMouseCoords.x},${currentMouseCoords.y}]`}</div>
           <div className = "button_holder">
             <div className = "button" style = {{border:'1px solid black',backgroundColor:settings.currentColor == 1?settings.foregroundColor:settings.backgroundColor,width:'20px',height:'20px'}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
             <ToolButton tooltip = "pixel" state = {settings.currentTool === 'pixel'} src={"pixel_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'pixel'})}/>
@@ -1360,8 +1346,8 @@ function App() {
             <ToolButton tooltip = "select" state = {settings.currentTool === 'select'} src={"select_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'select'})}/>
             <ToolButton tooltip = "move" state = {settings.currentTool == 'move'} src={"move_icon.gif"} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}/>
             <ToolButton tooltip = "clear frame" state = {false} src={"clear_icon.gif"} onClick = {clearFrame}/>
-            <ToolButton style = {{filter:undoBuffer.current.length == 0?'contrast(80%)':null,color:undoBuffer.current.length == 0?'#c2c2c2ff':null,borderColor:undoBuffer.current.length == 0?'#c2c2c2ff':null,backgroundColor:undoBuffer.current.length == 0?'white':null,cursor:undoBuffer.current.length == 0?'not-allowed':null}} tooltip = "undo" state = {false} src={"undo_icon.gif"} onClick = {undo}/>
-            <ToolButton style = {{filter:redoBuffer.current.length == 0?'contrast(80%)':null,color:redoBuffer.current.length == 0?'#c2c2c2ff':null,borderColor:redoBuffer.current.length == 0?'#c2c2c2ff':null,backgroundColor:redoBuffer.current.length == 0?'white':null,cursor:redoBuffer.current.length == 0?'not-allowed':null}} tooltip = "redo" state = {false} src={"redo_icon.gif"} onClick = {redo}/>
+            <ToolButton style = {{filter:undoBuffer.current.length == 0?'contrast(80%)':null,color:undoBuffer.current.length == 0?'#c2c2c2ff':null,borderColor:undoBuffer.current.length == 0?'#c2c2c2ff':null,backgroundColor:undoBuffer.current.length == 0?'white':null,cursor:undoBuffer.current.length == 0?'not-allowed':null}} tooltip = "undo" state = {false} src={undoBuffer.current.length?"undo_icon.gif":"undo_icon.bmp"} onClick = {undo}/>
+            <ToolButton style = {{filter:redoBuffer.current.length == 0?'contrast(80%)':null,color:redoBuffer.current.length == 0?'#c2c2c2ff':null,borderColor:redoBuffer.current.length == 0?'#c2c2c2ff':null,backgroundColor:redoBuffer.current.length == 0?'white':null,cursor:redoBuffer.current.length == 0?'not-allowed':null}} tooltip = "redo" state = {false} src={redoBuffer.current.length?"redo_icon.gif":"redo_icon.bmp"} onClick = {redo}/>
           </div>
           <div className = "button_holder">
             <ToolButton tooltip = "invert" state = {false} text = " invert " onClick = {invertFrame}/>
@@ -1370,7 +1356,7 @@ function App() {
             <ToolButton tooltip = "open color pallette" state = {settings.palletteOpen} text = " pallette " onClick = {()=> setSettings({...settingsRef.current,palletteOpen:!settingsRef.current.palletteOpen})}/>
           </div>
           {settings.palletteOpen &&
-            <div style = {{display:'flex',padding:'10px',marginTop:'10px',borderRadius:'30px',backgroundColor:'black',width:'fit-content'}}>
+            <div className = "button_holder"style = {{display:'flex',padding:'10px',marginTop:'10px',borderRadius:'30px',backgroundColor:'black',width:'fit-content'}}>
               <div className = "button_holder" style = {{flexDirection:'column'}}>
                 <div className = "button" style = {{padding:'4px',width:'fit-content',height:'fit-content'}} onClick = {(e)=>{setSettings({...settingsRef.current,backgroundColor:'#00000000',foregroundColor:'#000000ff',overlayColor:'#bcbcbcff'})}}>{" black/transp."}</div>
                 <div className = "button" style = {{padding:'4px',width:'fit-content',height:'fit-content'}} onClick = {(e)=>{setSettings({...settingsRef.current,backgroundColor:'#00000000',foregroundColor:'#ffffffff',overlayColor:'#bcbcbcff'})}}>{" white/transp."}</div>
@@ -1395,37 +1381,35 @@ function App() {
           </div>
 
           {/* drop zone */}
-          <label id="drop-zone">
+          {/* <label id="drop-zone">
             Drop images here, or click to upload.
             <input type="file" id="file-input" multiple accept="image/*" style = {{display:'none'}} onInput={(e) => {loadImage(e.target.files)}} />
-          </label>
+          </label> */}
+          <DropZone title = "Drop images here, or click to upload." callback = {(files) => {loadImage(files)}}></DropZone>
 
           {/* settings */}
           <div className = 'button_holder'>
             <GifExporter/>
-            <div className = "button" onClick = {downloadAllFramesAsBMPs}>{"download zip"}</div>
+            <div className = "button" onClick = {downloadAllFramesAsBMPs}>{'save zip (.bmp)'}</div>
             <div className = "button" style = {{backgroundColor:settings.settingsBoxOpen?'blue':'white',color:settings.settingsBoxOpen?'white':'inherit'}} onClick = {()=> setSettings({...settingsRef.current,settingsBoxOpen:!settingsRef.current.settingsBoxOpen})}>{" settings "}</div>
           </div>
           {settings.settingsBoxOpen &&
           <div style = {{borderLeft:'1px solid black',width:'350px',padding:'10px'}}>
+            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,renderByteArray:!settingsRef.current.renderByteArray});}}>{settings.renderByteArray?(<>C++ byte array: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"render C++ byte array: OFF"}</div>
             <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overwriteWithBackground:!settingsRef.current.overwriteWithBackground});}}>{settings.overwriteWithBackground?(<>background overwrites foreground when moving: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"background overwrites foreground when moving: OFF"}</div>
             <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overlayGhosting:!settingsRef.current.overlayGhosting});}}>{settings.overlayGhosting?(<>ghosting: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON"}</span></>):"ghosting: OFF"}</div>
             <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,overlayGrid:!settingsRef.current.overlayGrid});}}>{settings.overlayGrid?(<>grid: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"grid: OFF"}</div>
-            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,resizeCanvasToImage:!settingsRef.current.resizeCanvasToImage});}}>{settings.resizeCanvasToImage?(<>resize to uploaded image: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"resize to uploaded image: OFF"}</div>
+            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,resizeCanvasToImage:!settingsRef.current.resizeCanvasToImage});}}>{settings.resizeCanvasToImage?(<>resize canvas to uploaded image: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"resize to uploaded image: OFF"}</div>
             <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,useAlphaAsBackground:!settingsRef.current.useAlphaAsBackground});}}>{settings.useAlphaAsBackground?(<>use transparency to determine background: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"use transparency to determine background: OFF"}</div>
             <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,parseFilesToSpritesByName:!settingsRef.current.parseFilesToSpritesByName});}}>{settings.parseFilesToSpritesByName?(<>autogen sprites from filenames: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"autogen sprites from filenames: OFF"}</div>
-            <div style = {{border:'none'}} className = "button" onClick = {() => {setSettings({...settingsRef.current,renderByteArray:!settingsRef.current.renderByteArray});}}>{settings.renderByteArray?(<>render C++ byte array: <span style = {{color:'white',backgroundColor:'blue',borderRadius:'10px',padding:'4px'}}>{"ON" }</span></>):"render C++ byte array: OFF"}</div>
           </div>
           }
         </div>
 
         {/* download links */}
-        <div id = "download_link_container">
-          {settings.renderByteArray &&
-            <ByteArrayText></ByteArrayText>
-          }
+        <div id = "download_link_container" style = {{gridArea:(settings.canvasScale*sprites[currentSprite].width<=384)?'downloadlinks':'downloadlinks_2'}}>
           <p style = {{padding:'none',marginBottom:'0px',fontFamily:'chopin',fontWeight:'normal',fontSize:'20px'}}>Name Prefix:</p>
-          <textarea style = {{fieldSizing:'content',height:'1em',borderRadius:'6px',backgroundColor:'blue',color:'white',padding:'4px',resize:'none',alignContent:'center'}} onInput={(e) => 
+          <textarea id = "sprite_name_textarea" style = {{display:'block',fieldSizing:'content',height:'1em',borderRadius:'6px',backgroundColor:'blue',color:'white',padding:'4px',resize:'none',alignContent:'center'}} onInput={(e) => 
             {
               e.preventDefault();
               const sprite = spritesRef.current[currentSpriteRef.current];
@@ -1438,9 +1422,14 @@ function App() {
           <div style = {{dispaly:'flex'}}>
             <p>{'('+getTotalImageDataSize()+' bytes of pixel data)'}</p>
           </div>
+          {settings.renderByteArray &&
+            <ByteArrayText></ByteArrayText>
+          }
         </div>
         <div id = "about">
-          <a href = "https://alexlafetra.github.io/" style = {{fontFamily:'Times New Roman'}}>alex lafetra</a> for <a style = {{fontStyle : 'italic',fontFamily:'Times New Roman'}} href = "https://alexlafetra.github.io/">2x_ultd.</a>
+          <div style = {{display:'block'}}>
+            <a href = "https://alexlafetra.github.io/" style = {{fontFamily:'Times New Roman'}}>alex lafetra</a> for <a style = {{fontStyle : 'italic',fontFamily:'Times New Roman'}} href = "https://alexlafetra.github.io/">2x_ultd.</a>
+          </div>
           {/* <div>this website</div> */}
         </div>
       </div>

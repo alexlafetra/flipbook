@@ -2,10 +2,6 @@
     font-family: chopin;
     src: url('/ChopinScript.ttf');
 }
-@font-face {
-    font-family: pixel_cursive;
-    src: url('/stepchild_cursive.ttf');
-}
 
 .center_container{
     width:100%;
@@ -22,12 +18,13 @@
     height:100%;
     position:relative;
     display:grid;
-    grid-template-rows: 200px max-content max-content;
+    grid-template-rows: 200px max-content max-content max-content;
     grid-template-columns: max-content fit-content(500px) 350px;
-    grid-template-areas: "title null none"
-                         "spritesheet_tabs null none"
-                         "ui canvas downloadlinks"
-                         "about about about";
+    grid-template-areas:"title null null"
+                        "spritesheet_tabs null null"
+                        "ui canvas downloadlinks"
+                        "downloadlinks_2 downloadlinks_2 downloadlinks_2"
+                        "about about about";
 }
 
 #title_container{
@@ -224,7 +221,7 @@
     visibility:visible;
 }
 /* file dropper */
-#drop-zone {
+.drop-zone {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -239,19 +236,23 @@
     cursor: pointer;
     transition:0.1s;
 }
-#drop-zone:hover{
+.drop-zone:hover{
     background-color:blue;
     border: 1px solid rgb(113, 136, 0);
 }
 
 #download_link_container{
     grid-area:downloadlinks;
+    display:flex;
+    flex-direction:column;
     height:fit-content;
+    width:fit-content;
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size:12px;
     margin:auto;
     margin-top:0;
     margin-left:80px;
+    align-items: center;
 }
 
 .download_link:focus{
@@ -271,7 +272,8 @@
 #about{
     grid-area:about;
     padding-left:80px;
-    display: block;
+    display: flex;
+    flex-direction: column;
     margin-bottom:20px;
     /* margin:auto; */
     margin-top: 60px;
@@ -300,11 +302,19 @@
     }
     .ui_container{
         padding-left: 0;
-        margin:auto;
+        margin:0;
+        /* margin:auto; */
+        justify-self: center;
+        justify-content: center;
+    }
+    /* center everything for mobile */
+    .ui_container .button_holder,.ui_label,#preview_gallery_holder,.drop-zone{
+        justify-self: center;
     }
     #download_link_container{
         padding-left: 0;
         margin:auto;
+        align-items: center;
     }
     .spritesheet_tabs_container{
         padding-left: 0;
@@ -314,5 +324,9 @@
     }
     #main_canvas{
         touch-action: pinch-zoom;
+    }
+    #about{
+        margin:auto;
+        padding:20px 20px;
     }
 }
