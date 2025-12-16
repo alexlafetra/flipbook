@@ -101,6 +101,7 @@
     mix-blend-mode:difference;
     position:relative;
     pointer-events: none;
+    user-select: none;
 }
 .spritesheet_tabs_container{
     grid-area: spritesheet_tabs;
