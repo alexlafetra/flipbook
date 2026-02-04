@@ -165,7 +165,6 @@ function App() {
   const currentSpriteRef = useRef(currentSprite);
   useEffect(() => {
     currentSpriteRef.current = currentSprite;
-    setGridDivs(createGridDivs(sprites[currentSprite].width,sprites[currentSprite].height,settingsRef.current.canvasScale));
   },[currentSprite]);
 
   const [userInputDimensions,setUserInputDimensions] = useState({
@@ -850,9 +849,10 @@ function App() {
     const buttonStyle = style?style:{};
     buttonStyle.backgroundColor = state?'blue':null;
     buttonStyle.color = state?'white':null;
-
+    buttonStyle.minWidth = '20px'
+    buttonStyle.minHeight = '20px'
     return(
-      <div className = "button" style = {buttonStyle} onTouchStart = {onClick} onClick = {onClick} onMouseEnter = {(e) => {setSettings({...settingsRef.current,tooltip:tooltip})}} onMouseLeave={(e) => {setSettings({...settingsRef.current,tooltip:null})}}>{src && <img className = "tool_icon" src = {src}></img>}{text && <div>{text}</div>}</div>
+      <div className = "button" style = {buttonStyle} onClick = {onClick}>{src && <img className = "tool_icon" src = {src}></img>}{text && <div>{text}</div>}</div>
     )
   }
 
@@ -897,32 +897,6 @@ function App() {
     return(<div style = {{maxWidth:"350px"}}>{outputString}</div>)
   }
 
-  function createGridDivs(width,height,scale){
-    const children = [];
-    const parentStyle = {
-      width:width*scale + 'px',
-      height:height*scale + 'px',
-      display:'grid',
-      position:'absolute',
-      gridTemplateColumns: `repeat(${width}, ${scale}px)`,
-      gridTemplateRows: `repeat(${height}, ${scale}px)`,
-    }
-    const borderStyle = '1px dashed #535889ff';
-    for(let i = 0; i<width*height; i++){
-      const childStyle = {
-        boxSizing: 'border-box',
-        width: scale + 'px',
-        height: scale + 'px',
-        border:borderStyle,
-        borderLeft: i % width === 0 ? borderStyle : '1px dashed transparent',
-        borderTop: i < width ? borderStyle : '1px dashed transparent',
-      };
-      children.push(<div key = {i} id = {"grid_div_"+i} className = "grid_div" style = {childStyle}></div>);
-    }
-    return(<div style = {parentStyle}>{children}</div>);
-  }
-
-  const [gridDivs,setGridDivs] = useState(()=>createGridDivs(16,16,settings.canvasScale));
   function play(){
     //copy the current settings
     backupSettingsRef.current = {
@@ -961,7 +935,6 @@ function App() {
           sprite.width = frames[0].width;
           sprite.height = frames[0].height;
           setSprites([...spritesRef.current]);
-          setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
         });
       }
       else{
@@ -988,7 +961,6 @@ function App() {
               sprite.resize(img.width,img.height);
               const newScale = Math.min(Math.trunc(350 / img.width),12);
               setSettings({...settingsRef.current,canvasScale:newScale,overlayGrid:((img.width*img.height)<1024)?true:false});
-              setGridDivs(createGridDivs(sprite.width,sprite.height,newScale));
             }
             // draw image to main canvas
             const tempCanvas = document.createElement('canvas');
@@ -1013,7 +985,6 @@ function App() {
         reader.readAsDataURL(file);
       }
     });
-    setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
   }
   function loadImage(files){
     //parsing files by name
@@ -1082,7 +1053,6 @@ function App() {
     setSprites(prev => (
       [...prev]
     ));
-    setGridDivs(createGridDivs(sprite.width,sprite.height,settingsRef.current.canvasScale));
   }
 
   function addNewSprite(){
@@ -1265,6 +1235,19 @@ function App() {
   function clearTooltip(){
     setSettings({...settingsRef.current,tooltip:null});
   }
+  const gridOverlayStyle = {
+    pointerEvents:'none',
+    position:'absolute',
+    width:sprites[currentSprite].width*settings.canvasScale +'px',
+    height:sprites[currentSprite].height*settings.canvasScale +'px',
+    zIndex:5,
+    display: 'grid',
+    background:`
+      linear-gradient(#4f4f4f 1px, transparent 1px),
+      linear-gradient(90deg, #4f4f4f 1px, transparent 1px)`,
+    backgroundSize: `${100/sprites[currentSprite].width}% ${100/sprites[currentSprite].height}%`
+  }
+
 
   return (
     <div className = "center_container">
@@ -1281,7 +1264,9 @@ function App() {
         <div id = "canvas_container_container">
           <div id = "canvas_container" style = {canvasContainerStyle}>
             <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:settingsRef.current.currentTool})} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}  onMouseLeave = {handleMouseLeave} onTouchEnd={handleMouseUp} onTouchCancel={handleMouseUp} onTouchMove={handleMouseMove}></canvas>
-            {settings.overlayGrid && gridDivs}
+            {settings.overlayGrid && 
+              <div className = "canvas_overlay_grid" style = {gridOverlayStyle}></div>
+            }
             {(sprites[currentSprite].width <= 32) && (sprites[currentSprite].height <= 32) && (settings.canvasScale*sprites[currentSprite].width<=256) &&
             <img id = "canvas_border" className = "transparent_img_drop_shadow" src = 'border_animated.gif' style = {canvasBorderImageStyle}></img>
             }
@@ -1297,7 +1282,7 @@ function App() {
         {/* ui */}
         <div className = "ui_container">
           {/* preview canvases */}
-          <div className = "ui_label" style = {{marginTop:'5px'}}>frame -- {sprites[currentSprite].currentFrame+1} / {sprites[currentSprite].frames.length}</div>
+          <div className = "ui_label" style = {{fontWeight:'bold',fontSize:'15px',marginTop:'5px'}}>frame -- {sprites[currentSprite].currentFrame+1} / {sprites[currentSprite].frames.length}</div>
           <div id = "preview_gallery_holder" style = {{display:'flex',alignItems:'center',width:'300px',flexWrap:'wrap',height:'fit-content',overflowY:'scroll',marginTop:'5px',padding:'4px',borderRadius:'10px',border:'1px dashed black'}}>
             {createPreviewCanvases()}
             <div className = "button" onClick = {addNewFrame}>{" + "}</div>
@@ -1322,7 +1307,6 @@ function App() {
                 <input type="range" style = {{width:'100px'}} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'canvas zoom'})} className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" value = {settings.canvasScale} onInput={(e) => {
                     const newScale = parseFloat(e.target.value);
                     setSettings({...settingsRef.current,canvasScale:newScale});
-                    setGridDivs(createGridDivs(spritesRef.current[currentSpriteRef.current].width,spritesRef.current[currentSpriteRef.current].height,newScale));
                   }} />
                 <p>{settings.canvasScale+'x'}</p>
               </div>
@@ -1334,11 +1318,11 @@ function App() {
 
           {/* pixel/canvases manipulation tools */}
           {/* tooltip */}
-          <div className = "ui_label">tools{settings.tooltip && <>  -- {settings.tooltip}</>}{settings.tooltip === null && <> -- {settings.currentTool}</>}{currentMouseCoords &&` [${currentMouseCoords.x},${currentMouseCoords.y}]`}</div>
+          <div className = "ui_label" style = {{fontWeight:'bold',fontSize:'15px'}}>tools{settings.tooltip && <>  -- {settings.tooltip}</>}{settings.tooltip === null && <> -- {settings.currentTool}</>}{currentMouseCoords &&` [${currentMouseCoords.x},${currentMouseCoords.y}]`}</div>
           <div className = "button_holder">
             <div className = "button" style = {{border:'1px solid black',backgroundColor:settings.currentColor == 1?settings.foregroundColor:settings.backgroundColor,width:'20px',height:'20px'}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
-            <ToolButton tooltip = "pixel" state = {settings.currentTool === 'pixel'} src={"pixel_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'pixel'})}/>
-            <ToolButton tooltip = "line" state = {settings.currentTool === 'line'} src={"line_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'line'})}/>
+            <ToolButton tooltip = "draw pixels" state = {settings.currentTool === 'pixel'} src={"pixel_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'pixel'})}/>
+            <ToolButton tooltip = "draw lines" state = {settings.currentTool === 'line'} src={"line_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'line'})}/>
             <ToolButton tooltip = "fill" state = {settings.currentTool === 'fill'} src={"fill_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'fill'})}/>
           </div>
           <div className = "button_holder">

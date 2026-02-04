@@ -69,6 +69,7 @@
 }
 .button_holder{
     display:flex;
+    /* gap:10px; */
 }
 .button{
     white-space: pre;
