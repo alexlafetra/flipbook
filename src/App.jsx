@@ -42,7 +42,8 @@ function App() {
     renderByteArray:true,
     foregroundColor:'#ffffffff',
     backgroundColor:'#000000ff',
-    overlayColor:'#4b4b4bff'
+    overlayColor:'#4b4b4bff',
+    bytePackingFormat:'vertical'
   })
   const settingsRef = useRef(settings);
   const backupSettingsRef = useRef(settings);
@@ -859,28 +860,49 @@ function App() {
   const ByteArrayText = function(){
     const sprite = sprites[currentSprite];
     const pixelArray = [...sprite.frames[sprite.currentFrame].data];
+    let byteArray;
 
-    //Do a pass L-->R, taking one-byte deep (8px) vertical slices. Then do another pass, going another layer deep.
-    //This is to pass the data to tamo as "pages", which is how the OLED driver works
-
-    //normalize the image to be a multiple of 8 tall
-    if(sprite.height%8){
-      const padHeight = 8-sprite.height%8;
-      for(let i = 0; i<padHeight; i++){
-        for(let j = 0; j<sprite.width; j++){
-          pixelArray[pixelArray.length] = 0;
+    if(settings.bytePackingFormat == 'horizontal'){
+      //move down the image, grabbing 8px at a time along the row and padd the end with zeroes
+      byteArray = new Uint8Array(pixelArray.length/8);
+      let count = 0;
+      for(let y = 0; y<sprite.height; y++){
+        for(let x = 0; x<sprite.width; x+=8){
+          let newByte = 0;
+          for(let i = 0; i<8; i++){
+            let bitVal;
+            if(x+i > sprite.width)
+              bitVal = 0;
+            else bitVal = pixelArray[x+i+y*(sprite.width)];
+            newByte |= bitVal<<(7-i);
+          }
+          byteArray[count++] = newByte;
         }
       }
     }
-    const byteArray = new Uint8Array(pixelArray.length/8);
-    let count = 0;
-    for(let bite = 0; bite<Math.ceil(sprite.height/8); bite++){
-      for(let x = 0; x<sprite.width; x++){
-        let newByte = 0;
-        for(let i = 0; i<8; i++){
-          newByte |= pixelArray[i*sprite.width+x+bite*sprite.width*8]<<i;
+    else{
+      //Do a pass L-->R, taking one-byte deep (8px) vertical slices. Then do another pass, going another layer deep.
+      //This is to pass the data to tamo as "pages", which is how the OLED driver works
+
+      //normalize the image to be a multiple of 8 tall
+      if(sprite.height%8){
+        const padHeight = 8-sprite.height%8;
+        for(let i = 0; i<padHeight; i++){
+          for(let j = 0; j<sprite.width; j++){
+            pixelArray[pixelArray.length] = 0;
+          }
         }
-        byteArray[count++] = newByte;
+      }
+      byteArray = new Uint8Array(pixelArray.length/8);
+      let count = 0;
+      for(let bite = 0; bite<Math.ceil(sprite.height/8); bite++){
+        for(let x = 0; x<sprite.width; x++){
+          let newByte = 0;
+          for(let i = 0; i<8; i++){
+            newByte |= pixelArray[i*sprite.width+x+bite*sprite.width*8]<<i;
+          }
+          byteArray[count++] = newByte;
+        }
       }
     }
 
@@ -894,7 +916,16 @@ function App() {
     outputString = outputString.slice(0,-2);
     outputString += '\n};\n';
     
-    return(<div style = {{maxWidth:"350px"}}>{outputString}</div>)
+    return(
+      <>
+        <div>pack bytes:</div>
+        <div style = {{display:'flex'}}>
+          <div style = {{cursor:'pointer',padding:'5px 10px',borderRadius:'10px',color:settings.bytePackingFormat=='horizontal'?'white':null,backgroundColor:settings.bytePackingFormat=='horizontal'?'blue':null}} onClick = {(e)=>{setSettings({...settingsRef.current,bytePackingFormat:'horizontal'})}}>horizontally</div>
+          <div style = {{cursor:'pointer',padding:'5px 10px',borderRadius:'10px',color:settings.bytePackingFormat=='vertical'?'white':null,backgroundColor:settings.bytePackingFormat=='vertical'?'blue':null}} onClick = {(e)=>{setSettings({...settingsRef.current,bytePackingFormat:'vertical'})}}>vertically</div>
+        </div>
+        <div style = {{border:'1px dashed blue',marginTop:'10px',borderRadius:'10px',padding:'10px',maxWidth:"350px"}}>{outputString}</div>
+      </>
+    )
   }
 
   function play(){
@@ -1168,7 +1199,7 @@ function App() {
           }>
           </canvas>
           {sprites[currentSprite].frames.length > 1 &&
-            <div key = {index+'_delete_button'} className = "button" style = {{whiteSpace:'pre',justifyContent:'center',alignItems:'center',display:'flex',position:'absolute',top:'-3px',right:'-3px',width:'3px',height:'3px',borderRadius:'3px',margin:'0px'}}onClick = {()=>{deleteFrame(index)}}>{'x'}</div>
+            <div key = {index+'_delete_button'} className = "button" style = {{whiteSpace:'pre',justifyContent:'center',alignItems:'center',display:'flex',position:'absolute',top:'-5px',right:'-5px',width:'15px',height:'15px',borderRadius:'5px',margin:'0px'}}onClick = {()=>{deleteFrame(index)}}>{'x'}</div>
           }
         </div>);
     });
