@@ -718,7 +718,7 @@ function App() {
           break;
         case 's':
         case 'S':
-          setSettings({...settingsRef.current,currentTool:'select'});
+          // setSettings({...settingsRef.current,currentTool:'select'});
           break;
         case 'l':
         case 'L':
@@ -1357,7 +1357,7 @@ function App() {
             <ToolButton tooltip = "fill" state = {settings.currentTool === 'fill'} src={"fill_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'fill'})}/>
           </div>
           <div className = "button_holder">
-            <ToolButton tooltip = "select" state = {settings.currentTool === 'select'} src={"select_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'select'})}/>
+            {/* <ToolButton tooltip = "select" state = {settings.currentTool === 'select'} src={"select_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'select'})}/> */}
             <ToolButton tooltip = "move" state = {settings.currentTool == 'move'} src={"move_icon.gif"} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}/>
             <ToolButton tooltip = "clear frame" state = {false} src={"clear_icon.gif"} onClick = {clearFrame}/>
             <ToolButton style = {{filter:undoBuffer.current.length == 0?'contrast(80%)':null,color:undoBuffer.current.length == 0?'#c2c2c2ff':null,borderColor:undoBuffer.current.length == 0?'#c2c2c2ff':null,backgroundColor:undoBuffer.current.length == 0?'white':null,cursor:undoBuffer.current.length == 0?'not-allowed':null}} tooltip = "undo" state = {false} src={undoBuffer.current.length?"undo_icon.gif":"undo_icon.bmp"} onClick = {undo}/>
