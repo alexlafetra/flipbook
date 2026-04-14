@@ -152,7 +152,7 @@
 }
 .spritesheet_tab:hover .delete_button{
     visibility:visible;
-};
+}
 
 .colorpicker .react-colorful__hue-pointer,
 .colorpicker .react-colorful__saturation-pointer,
