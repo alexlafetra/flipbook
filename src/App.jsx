@@ -51,6 +51,9 @@ function App() {
     settingsRef.current = settings;
   }, [settings]);
 
+  const tooltip = useRef("tools -- ");
+
+
   const zip = useRef(new JSZip());
   const startClickCoords = useRef({x:0,y:0});
   const pixelSaveState = useRef(undefined);
@@ -77,6 +80,7 @@ function App() {
       spritesJSON:JSON.stringify(spritesRef.current),
       currentSprite:currentSpriteRef.current
     });
+    // pixelSaveState.current = PixelFrame(spritesRef.current[currentSpriteRef.current].width,spritesRef.current[currentSpriteRef.current].height,spritesRef.current[currentSpriteRef.current].frames[spritesRef.current[currentSpriteRef.current].currentFrame].data);
     //adding to the undo buffer resets the redo buffer
     redoBuffer.current = [];
   }
@@ -122,23 +126,19 @@ function App() {
     restoreState(nextState);
   }
 
-  const [selectionBox,setSelectionBox] = useState(SelectionBox());
-  const selectionBoxRef = useRef(selectionBox);
+  const selectionBox = useRef(SelectionBox());
   const selectedArea = useRef(null);
   const copyBuffer = useRef(null);
 
-  useEffect(() => {
-    selectionBoxRef.current = selectionBox;
-  },[selectionBox]);
 
   const selectionBoxStyle = {
     border:'1px dashed red',
-    width:selectionBox.getWidth()*settings.canvasScale,
-    height:selectionBox.getHeight()*settings.canvasScale,
+    width:selectionBox.current.getWidth()*settingsRef.current.canvasScale,
+    height:selectionBox.current.getHeight()*settingsRef.current.canvasScale,
     backgroundColor:'#ff00004c',
     position:'absolute',
-    marginLeft:(selectionBox.getOffsetLeft()*settings.canvasScale-1)+'px',
-    marginTop:(selectionBox.getOffsetTop()*settings.canvasScale-1)+'px'
+    marginLeft:(selectionBox.current.getOffsetLeft()*settingsRef.current.canvasScale-1)+'px',
+    marginTop:(selectionBox.current.getOffsetTop()*settingsRef.current.canvasScale-1)+'px'
   };
 
   //update the highlight on the divs whenever the mouse coords are updated
@@ -214,40 +214,47 @@ function App() {
 
   function handleMouseUp(e){
     const coords = getClickCoords(e);
+    const sprite = spritesRef.current[currentSpriteRef.current];
     switch(settingsRef.current.currentTool){
       case 'line':
-        setSettings({
-          ...settingsRef.current,
-          lineStarted : false
-        });
+          sprite.frames[sprite.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,[...pixelSaveState.current.data]);
+          sprite.frames[sprite.currentFrame].drawLine(startClickCoords.current.x,startClickCoords.current.y,coords.x,coords.y,settingsRef.current.currentColor);
+          pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
+          // setSprites(prev => (
+          //   [...prev]
+          // ));
+          setSettings({
+            ...settingsRef.current,
+            lineStarted : false
+          });
+          pushUndoState();
         break;
       case 'move':
         setSettings({
           ...settingsRef.current,
           moveStarted : false
         });
+        // setSprites(prev => (
+        //   [...prev]
+        // ));
         break;
       case 'select':
-        if(selectionBoxRef.current.hasStarted){
+        if(selectionBox.current.hasStarted && !selectionBox.current.active){
           //if an area with a dimension less than 1 was selected, cancel the box
-          if(Math.abs(coords.x_rounded - selectionBoxRef.current.start.x) < 1 || Math.abs(coords.y_rounded - selectionBoxRef.current.start.y) < 1){
-            setSelectionBox(prev => {
-              return{
-                ...prev,
+          if(Math.abs(coords.x_rounded - selectionBox.current.start.x) < 1 || Math.abs(coords.y_rounded - selectionBox.current.start.y) < 1){
+            selectionBox.current = {
+                ...selectionBox.current,
                 active:false,
                 hasStarted:false,
-              }
-            });
+            }          
           }
           else{
-            setSelectionBox(prev => {
-              return{
-                ...prev,
+            selectionBox.current = {
+                ...selectionBox.current,
                 active:true,
                 hasStarted:false,
                 end:{x:coords.x_rounded,y:coords.y_rounded}
-              }
-            });
+            }     
           }
         }
         break;
@@ -288,27 +295,34 @@ function App() {
             ...settingsRef.current,
             lineStarted : true
           });
+          setSprites(prev => (
+            [...prev]
+          ));
         }
       case 'move':
         if(!settingsRef.current.moveStarted){
           pushUndoState();
-          //store the selected area
-          if(selectionBoxRef.current.active){
-            selectedArea.current = PixelFrame(selectionBoxRef.current.getWidth(),selectionBoxRef.current.getHeight(),0);
-            pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
-            const bounds = {
-              start: {x:Math.min(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.min(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)},
-              end: {x:Math.max(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.max(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)}
-            };
-            //copy area into pixel array
-            for(let x = 0; x<selectionBoxRef.current.getWidth(); x++){
-              for(let y = 0; y<selectionBoxRef.current.getHeight(); y++){
-                selectedArea.current.setPixel(x,y,sprites[currentSprite].frames[sprites[currentSprite].currentFrame].getPixel(x+bounds.start.x,y+bounds.start.y));
-                //clear out pixels from canvas backup
-                pixelSaveState.current.setPixel(x+bounds.start.x,y+bounds.start.y,0);
-              }
+          if(!selectionBox.current.active){
+            selectionBox.current =  {
+              ...selectionBox.current,
+              start:{x:0,y:0},
+              end:{x:sprite.width,y:sprite.height}
             }
-            //make a backup of the whole canvas
+          }
+          //store the selection box area
+          selectedArea.current = PixelFrame(selectionBox.current.getWidth(),selectionBox.current.getHeight(),0);
+          pixelSaveState.current = PixelFrame(sprite.width,sprite.height,sprite.frames[sprite.currentFrame].data);
+          const bounds = {
+            start: {x:Math.min(selectionBox.current.start.x,selectionBox.current.end.x),y:Math.min(selectionBox.current.start.y,selectionBox.current.end.y)},
+            end: {x:Math.max(selectionBox.current.start.x,selectionBox.current.end.x),y:Math.max(selectionBox.current.start.y,selectionBox.current.end.y)}
+          };
+          //copy area into pixel array
+          for(let x = 0; x<selectionBox.current.getWidth(); x++){
+            for(let y = 0; y<selectionBox.current.getHeight(); y++){
+              selectedArea.current.setPixel(x,y,sprites[currentSprite].frames[sprites[currentSprite].currentFrame].getPixel(x+bounds.start.x,y+bounds.start.y));
+              //clear out pixels from canvas backup
+              pixelSaveState.current.setPixel(x+bounds.start.x,y+bounds.start.y,0);
+            }
           }
           setSettings({
             ...settingsRef.current,
@@ -317,21 +331,19 @@ function App() {
         }
         break;
       case 'select':
-        setSelectionBox(prev => {
-          return{
-            ...prev,
-            active:false,
-            hasStarted:true,
-            start:{x:coords.x_rounded,y:coords.y_rounded},
-            end:{x:coords.x_rounded,y:coords.y_rounded}
-          }
-        })
+        selectionBox.current =  {
+          ...selectionBox.current,
+          active:false,
+          hasStarted:true,
+          start:{x:coords.x_rounded,y:coords.y_rounded},
+          end:{x:coords.x_rounded,y:coords.y_rounded}
+        }
         break;
     }
   }
   function handleMouseLeave(e){
     setCurrentMouseCoords(null);
-    setSettings({...settingsRef.current,tooltip:null});
+    clearTooltip();
   }
   function handleMouseMove(e){
     const coords = getClickCoords(e);
@@ -352,7 +364,7 @@ function App() {
         case 'line':
           //if you've already started a line, draw it
           if(settingsRef.current.lineStarted){
-            sprite.frames[sprite.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,pixelSaveState.current.data);
+            sprite.frames[sprite.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,[...pixelSaveState.current.data]);
             sprite.frames[sprite.currentFrame].drawLine(startClickCoords.current.x,startClickCoords.current.y,coords.x,coords.y,settingsRef.current.currentColor);
             setSprites(prev => (
               [...prev]
@@ -389,15 +401,13 @@ function App() {
           }
           break;
         case 'select':
-          if(selectionBox.hasStarted){
-            setSelectionBox(prev => {
-              return{
-                ...prev,
+          if(selectionBox.current.hasStarted){
+            selectionBox.current = {
+                ...selectionBox.current,
                 active:false,
                 hasStarted:true,
                 end:{x:coords.x_rounded,y:coords.y_rounded}
-              }
-            })
+            }
           }
           break;
       }
@@ -413,14 +423,14 @@ function App() {
     copy(true);
   }
   function copy(cut){
-    if(!selectionBoxRef.current.active)
+    if(!selectionBox.current.active)
       return;
     if(cut)
       pushUndoState();
-    copyBuffer.current = PixelFrame(selectionBoxRef.current.getWidth(),selectionBoxRef.current.getHeight(),0);
+    copyBuffer.current = PixelFrame(selectionBox.current.getWidth(),selectionBox.current.getHeight(),0);
     const bounds = {
-      start: {x:Math.min(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.min(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)},
-      end: {x:Math.max(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.max(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)}
+      start: {x:Math.min(selectionBox.current.start.x,selectionBox.current.end.x),y:Math.min(selectionBox.current.start.y,selectionBox.current.end.y)},
+      end: {x:Math.max(selectionBox.current.start.x,selectionBox.current.end.x),y:Math.max(selectionBox.current.start.y,selectionBox.current.end.y)}
     };
     const sprite = spritesRef.current[currentSpriteRef.current];
     //copy area into pixel array
@@ -457,12 +467,13 @@ function App() {
     const sprite = spritesRef.current[currentSpriteRef.current];
 
     //if a selection box is active, use it to translate pixels
-    if(selectionBoxRef.current.active && selectedArea.current){
+    // if(selectionBox.current.active && selectedArea.current){
+    if(selectedArea.current){
       sprite.frames[sprite.currentFrame] = PixelFrame(pixelSaveState.current.width,pixelSaveState.current.height,pixelSaveState.current.data);
       
       const bounds = {
-        start: {x:Math.min(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.min(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)},
-        end: {x:Math.max(selectionBoxRef.current.start.x,selectionBoxRef.current.end.x),y:Math.max(selectionBoxRef.current.start.y,selectionBoxRef.current.end.y)}
+        start: {x:Math.min(selectionBox.current.start.x,selectionBox.current.end.x),y:Math.min(selectionBox.current.start.y,selectionBox.current.end.y)},
+        end: {x:Math.max(selectionBox.current.start.x,selectionBox.current.end.x),y:Math.max(selectionBox.current.start.y,selectionBox.current.end.y)}
       };
       //put selected area back in, offset a bit
       for(let x = 0;x<selectedArea.current.width;x++){
@@ -472,13 +483,11 @@ function App() {
             sprite.frames[sprite.currentFrame].setPixel(x+heading.x+bounds.start.x,y+heading.y+bounds.start.y,selectedArea.current.getPixel(x,y));
         }
       }
-      setSelectionBox(prev => {
-        return{
-          ...prev,
-          start:{x:bounds.start.x+heading.x,y:bounds.start.y+heading.y},
-          end:{x:bounds.end.x+heading.x,y:bounds.end.y+heading.y}
-        }
-      });
+      selectionBox.current = {
+        ...selectionBox.current,
+        start:{x:bounds.start.x+heading.x,y:bounds.start.y+heading.y},
+        end:{x:bounds.end.x+heading.x,y:bounds.end.y+heading.y}
+      }
     }
     else{
       const newFrame = PixelFrame(sprite.width, sprite.height, 0);
@@ -661,6 +670,25 @@ function App() {
     ));
   }
 
+  function moveFrameBack(index){
+    if(index){
+      [spritesRef.current[currentSpriteRef.current].frames[index],spritesRef.current[currentSpriteRef.current].frames[index-1]] = [spritesRef.current[currentSpriteRef.current].frames[index-1],spritesRef.current[currentSpriteRef.current].frames[index]];
+      spritesRef.current[currentSpriteRef.current].currentFrame = index-1;
+      setSprites(prev => (
+        [...prev]
+      ));
+    }
+  }
+  function moveFrameForward(index){
+    if(index < (spritesRef.current[currentSpriteRef.current].frames.length-1)){
+      [spritesRef.current[currentSpriteRef.current].frames[index],spritesRef.current[currentSpriteRef.current].frames[index+1]] = [spritesRef.current[currentSpriteRef.current].frames[index+1],spritesRef.current[currentSpriteRef.current].frames[index]];
+      spritesRef.current[currentSpriteRef.current].currentFrame = index+1;
+      setSprites(prev => (
+        [...prev]
+      ));
+    }
+  }
+
   function handleKeyDown(e){
     if((e.target === document.body)){
       const sprite = spritesRef.current[currentSpriteRef.current];
@@ -718,7 +746,7 @@ function App() {
           break;
         case 's':
         case 'S':
-          // setSettings({...settingsRef.current,currentTool:'select'});
+          setSettings({...settingsRef.current,currentTool:'select'});
           break;
         case 'l':
         case 'L':
@@ -852,8 +880,9 @@ function App() {
     buttonStyle.color = state?'white':null;
     buttonStyle.minWidth = '20px'
     buttonStyle.minHeight = '20px'
+  
     return(
-      <div className = "button" style = {buttonStyle} onClick = {onClick}>{src && <img className = "tool_icon" src = {src}></img>}{text && <div>{text}</div>}</div>
+      <div className = "button" style = {buttonStyle} onMouseEnter = {()=>{setTooltip(tooltip)}}onClick = {onClick}>{src && <img className = "tool_icon" src = {src}></img>}{text && <div>{text}</div>}</div>
     )
   }
 
@@ -1198,9 +1227,9 @@ function App() {
             }
           }>
           </canvas>
-          {sprites[currentSprite].frames.length > 1 &&
+          {/* {sprites[currentSprite].frames.length > 1 &&
             <div key = {index+'_delete_button'} className = "button" style = {{whiteSpace:'pre',justifyContent:'center',alignItems:'center',display:'flex',position:'absolute',top:'-5px',right:'-5px',width:'15px',height:'15px',borderRadius:'5px',margin:'0px'}}onClick = {()=>{deleteFrame(index)}}>{'x'}</div>
-          }
+          */ }
         </div>);
     });
   }
@@ -1264,8 +1293,14 @@ function App() {
   }
 
   function clearTooltip(){
-    setSettings({...settingsRef.current,tooltip:null});
+    tooltip.current = `tools -- ${settingsRef.current.currentTool}`;
+    // document.getElementById("tooltip").innerText = tooltip.current;
   }
+  function setTooltip(val){
+    tooltip.current = `tools -- ${val}`;
+    // document.getElementById("tooltip").innerText = tooltip.current;
+  }
+
   const gridOverlayStyle = {
     pointerEvents:'none',
     position:'absolute',
@@ -1291,17 +1326,18 @@ function App() {
           <img id = "gif_3" className = "title_gif " src = 'bug_angry.gif' style = {{left:'-70px',top:'40px'}} ></img>
           <img id = "gif_4" className = "title_gif " src = 'boto_sad.gif' style = {{left:'210px',top:'40px'}} ></img>
         </div>
+        <img id = "hardware_gif" src = "tamo_rotating_small.gif"></img>
         {/* grid overlay, border image, and main canvas */}
         <div id = "canvas_container_container">
           <div id = "canvas_container" style = {canvasContainerStyle}>
-            <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:settingsRef.current.currentTool})} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}  onMouseLeave = {handleMouseLeave} onTouchEnd={handleMouseUp} onTouchCancel={handleMouseUp} onTouchMove={handleMouseMove}></canvas>
+            <canvas id = "main_canvas" style = {mainCanvasStyle} ref = {mainCanvasRef} onMouseEnter = {() => setTooltip(settingsRef.current.currentTool)} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}  onMouseLeave = {handleMouseLeave} onTouchEnd={handleMouseUp} onTouchCancel={handleMouseUp} onTouchMove={handleMouseMove}></canvas>
             {settings.overlayGrid && 
               <div className = "canvas_overlay_grid" style = {gridOverlayStyle}></div>
             }
             {(sprites[currentSprite].width <= 32) && (sprites[currentSprite].height <= 32) && (settings.canvasScale*sprites[currentSprite].width<=256) &&
             <img id = "canvas_border" className = "transparent_img_drop_shadow" src = 'border_animated.gif' style = {canvasBorderImageStyle}></img>
             }
-            {(selectionBox.active || selectionBox.hasStarted) &&
+            {(selectionBox.current.active || selectionBox.current.hasStarted) &&
               <div id = "selection_box" style = {selectionBoxStyle}></div>
             }
           </div>
@@ -1321,21 +1357,34 @@ function App() {
           
           {/* frame editing */}
           <div className = "button_holder">
+            <ToolButton tooltip = "move frame back" state = {false} src={"back_icon.gif"} onClick = {()=>{moveFrameBack(spritesRef.current[currentSpriteRef.current].currentFrame)}}/>
             <ToolButton tooltip = {settings.playing?"pause":"play"} state = {settings.playing} src={settings.playing?"pause_icon.gif":"play_icon.bmp"} onClick = {settings.playing?()=>{stop();}:()=>{play();}}/>
             <ToolButton tooltip = "duplicate frame" state = {false} src={"duplicate_icon.gif"} onClick = {()=>{duplicateFrame(spritesRef.current[currentSpriteRef.current].currentFrame)}}/>
             <ToolButton tooltip = "reverse order" state = {false} src={"reorder_icon.gif"} onClick = {reverseFrames}/>
+            <ToolButton tooltip = "delete frame" state = {false} src={"clear_icon.gif"} onClick = {()=>{deleteFrame(spritesRef.current[currentSpriteRef.current].currentFrame)}}/>
+            <ToolButton tooltip = "move frame forward" state = {false} src={"forward_icon.gif"} onClick = {()=>{moveFrameForward(spritesRef.current[currentSpriteRef.current].currentFrame)}}/>
+          </div>
+          {/* playback speed slider */}
+          <div className = "button_holder" style = {{flexDirection:'column',width:'fit-content'}}>
+            <div style = {{fontStyle:'italic',margin:'auto',marginBottom:'-12px',}}>frame delay</div>
+            <div className='button_holder'>
+              <input type="range" className = "control_slider" id="frame_speed_slider" name="ms" min="100" max="1000" step="100" onInput={(e) => {window.clearTimeout(timeoutIDRef.current);setSettings({...settingsRef.current,frameSpeed:parseInt(e.target.value)});if(settingsRef.current.playing){
+                timeoutIDRef.current = window.setTimeout(playNextFrame,parseInt(e.target.value));
+              }}} />
+              <p>{settings.frameSpeed+'ms'}</p>
+            </div>
           </div>
           <div className = "button_holder" style = {{alignItems:'center'}}>
-            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'white',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'sprite width'})}/>
+            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.width != sprites[currentSprite].width)?'blue':'white',color:(userInputDimensions.width != sprites[currentSprite].width)?'white':'inherit'}} className = "dimension_input" id="width_input" name="width" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,width:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].width} onMouseLeave = {clearTooltip} onMouseEnter = {() => setTooltip('sprite width')}/>
             <p style = {{fontStyle:'italic',fontFamily:'times'}}>x</p>
-            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'white',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'sprite height'})}/>
+            <input inputMode = "numeric" type="number" style = {{backgroundColor:(userInputDimensions.height != sprites[currentSprite].height)?'blue':'white',color:(userInputDimensions.height != sprites[currentSprite].height)?'white':'inherit'}} className = "dimension_input" id="height_input" name="height" min="1" max={settings.maxCanvasDimension} onInput = {(e) =>{setUserInputDimensions({...userInputDimensionsRef.current,height:parseInt(e.target.value)})}} defaultValue={sprites[currentSprite].height} onMouseLeave = {clearTooltip} onMouseEnter = {() => setTooltip('sprite height')}/>
             {(userInputDimensions.height != sprites[currentSprite].height || userInputDimensions.width != sprites[currentSprite].width) &&
               <div className = "button" onClick = {resizeCanvasToNewDimensions}>resize</div>
             }
             <div className = "button_holder" style = {{flexDirection:'column',width:'fit-content'}}>
               <div style = {{fontStyle:'italic',margin:'auto',marginBottom:'-10px',}}>zoom</div>
               <div className = "button_holder" style = {{}}>
-                <input type="range" style = {{width:'100px'}} onMouseLeave = {clearTooltip} onMouseEnter = {() => setSettings({...settingsRef.current,tooltip:'canvas zoom'})} className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" value = {settings.canvasScale} onInput={(e) => {
+                <input type="range" style = {{width:'100px'}} onMouseLeave = {clearTooltip} onMouseEnter = {() => setTooltip('canvas zoom')} className = "control_slider" id="canvas_scale_slider" name="ms" min="1" max="32" step="1" value = {settings.canvasScale} onInput={(e) => {
                     const newScale = parseFloat(e.target.value);
                     setSettings({...settingsRef.current,canvasScale:newScale});
                   }} />
@@ -1349,7 +1398,7 @@ function App() {
 
           {/* pixel/canvases manipulation tools */}
           {/* tooltip */}
-          <div className = "ui_label" style = {{fontWeight:'bold',fontSize:'15px'}}>tools{settings.tooltip && <>  -- {settings.tooltip}</>}{settings.tooltip === null && <> -- {settings.currentTool}</>}{currentMouseCoords &&` [${currentMouseCoords.x},${currentMouseCoords.y}]`}</div>
+          <div id = "tooltip" className = "ui_label" style = {{fontWeight:'bold',fontSize:'15px'}}>tools{settings.tooltip && <>  -- {settings.tooltip}</>}{settings.tooltip === null && <> -- {settings.currentTool}</>}{currentMouseCoords &&` [${currentMouseCoords.x},${currentMouseCoords.y}]`}</div>
           <div className = "button_holder">
             <div className = "button" style = {{border:'1px solid black',backgroundColor:settings.currentColor == 1?settings.foregroundColor:settings.backgroundColor,width:'20px',height:'20px'}} onClick = {() => {setSettings({...settingsRef.current,currentColor:settingsRef.current.currentColor?0:1})}}>{"  "}</div>
             <ToolButton tooltip = "draw pixels" state = {settings.currentTool === 'pixel'} src={"pixel_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'pixel'})}/>
@@ -1357,7 +1406,7 @@ function App() {
             <ToolButton tooltip = "fill" state = {settings.currentTool === 'fill'} src={"fill_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'fill'})}/>
           </div>
           <div className = "button_holder">
-            {/* <ToolButton tooltip = "select" state = {settings.currentTool === 'select'} src={"select_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'select'})}/> */}
+            <ToolButton tooltip = "select" state = {settings.currentTool === 'select'} src={"select_icon.gif"} onClick = {() => setSettings({...settingsRef.current,currentTool:'select'})}/>
             <ToolButton tooltip = "move" state = {settings.currentTool == 'move'} src={"move_icon.gif"} onClick = {() => {setSettings({...settingsRef.current,currentTool:'move'})}}/>
             <ToolButton tooltip = "clear frame" state = {false} src={"clear_icon.gif"} onClick = {clearFrame}/>
             <ToolButton style = {{filter:undoBuffer.current.length == 0?'contrast(80%)':null,color:undoBuffer.current.length == 0?'#c2c2c2ff':null,borderColor:undoBuffer.current.length == 0?'#c2c2c2ff':null,backgroundColor:undoBuffer.current.length == 0?'white':null,cursor:undoBuffer.current.length == 0?'not-allowed':null}} tooltip = "undo" state = {false} src={undoBuffer.current.length?"undo_icon.gif":"undo_icon.bmp"} onClick = {undo}/>
@@ -1383,16 +1432,6 @@ function App() {
               </div>
             </div>
           }
-          {/* playback speed slider */}
-          <div className = "button_holder" style = {{flexDirection:'column',width:'fit-content'}}>
-            <div style = {{fontStyle:'italic',margin:'auto',marginBottom:'-12px',}}>frame delay</div>
-            <div className='button_holder'>
-              <input type="range" className = "control_slider" id="frame_speed_slider" name="ms" min="100" max="1000" step="100" onInput={(e) => {window.clearTimeout(timeoutIDRef.current);setSettings({...settingsRef.current,frameSpeed:parseInt(e.target.value)});if(settingsRef.current.playing){
-                timeoutIDRef.current = window.setTimeout(playNextFrame,parseInt(e.target.value));
-              }}} />
-              <p>{settings.frameSpeed+'ms'}</p>
-            </div>
-          </div>
 
           {/* drop zone */}
           {/* <label id="drop-zone">

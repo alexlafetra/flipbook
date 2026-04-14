@@ -288,6 +288,10 @@
     font-size:12px;
 }
 
+#hardware_gif{
+    width:150px;
+}
+
 @media all and (max-width: 1000px) {
     .app_container{
         overflow-y: scroll;
@@ -315,6 +319,12 @@
     /* center everything for mobile */
     .ui_container .button_holder,.ui_label,#preview_gallery_holder,.drop-zone{
         justify-self: center;
+    }
+    #hardware_gif{
+        position:absolute;
+        top:0;
+        left:0;
+        width:150px;
     }
     #download_link_container{
         padding-left: 0;
